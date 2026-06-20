@@ -45,6 +45,7 @@ from torch import nn
 from torch.utils.data import DataLoader
 
 from data_pipeline.labeling import LABEL_TO_INT
+from ml_pipeline.calibrate import apply_calibration, expected_calibration_error, fit_calibrators
 from ml_pipeline.common import (
     FEATURE_COLUMNS,
     NUM_CLASS,
@@ -198,10 +199,15 @@ def train_one_fold(
     if best_state is not None:
         model.load_state_dict(best_state)
 
+    y_pred, y_proba = _predict_loader(model, test_loader, device)
+    return model, scaler, y_pred, y_proba
+
+
+def _predict_loader(model: nn.Module, loader: DataLoader, device: str) -> tuple[np.ndarray, np.ndarray]:
     model.eval()
     all_preds, all_proba = [], []
     with torch.no_grad():
-        for xb, _yb in test_loader:
+        for xb, _yb in loader:
             xb = xb.to(device)
             logits, _ = model(xb)
             proba = torch.softmax(logits, dim=1).cpu().numpy()
@@ -210,7 +216,26 @@ def train_one_fold(
 
     y_pred = np.concatenate(all_preds) if all_preds else np.array([], dtype=int)
     y_proba = np.concatenate(all_proba) if all_proba else np.zeros((0, NUM_CLASS))
-    return model, scaler, y_pred, y_proba
+    return y_pred, y_proba
+
+
+def predict_positions(
+    model: nn.Module,
+    scaler: StandardScaler,
+    X_full: np.ndarray,
+    positions: np.ndarray,
+    seq_len: int,
+    y_full: np.ndarray,
+    batch_size: int,
+    device: str,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Run the trained model + its fold-fit scaler over an arbitrary
+    position set (e.g. a calibration slice) — used outside train_one_fold
+    so calibration doesn't require retraining."""
+    scaled = scaler.transform(X_full).astype(np.float32)
+    ds = SequenceWindowDataset(scaled, y_full, positions, seq_len)
+    loader = _make_loader(ds, batch_size, shuffle=False, device=device)
+    return _predict_loader(model, loader, device)
 
 
 def _collect_mean_attention(model: nn.Module, loader: DataLoader, device: str) -> np.ndarray | None:
@@ -255,11 +280,18 @@ def run_training(
     tuning_patience: int = 4,
     final_max_epochs: int = 40,
     final_patience: int = 6,
+    calibration_method: str = "isotonic",
+    calibration_frac: float = 0.15,
     labeled_df: pd.DataFrame | None = None,
 ) -> str:
     """Full train+tune+evaluate+register pipeline for one (symbol, timeframe).
 
     `labeled_df` is a testing hook (see train_lightgbm.run_training).
+
+    A calibration slice is carved from the champion's training data,
+    chronologically between the early-stopping slice and the final
+    holdout (fit < early-stop-val < calibration < holdout) — see
+    train_lightgbm.run_training's docstring for why.
 
     Returns the MLflow run ID of the parent (champion) run.
     """
@@ -358,13 +390,32 @@ def run_training(
 
         holdout_fold, _tuning_folds = _build_splits(n_total, label_end_idx, seq_len, n_splits, embargo_bars, holdout_frac)
 
-        champion, scaler, y_pred, y_proba = train_one_fold(
-            best, X_full, y_full, holdout_fold, seq_len, seed, device, final_max_epochs, final_patience
+        # Chronological order: fit < early-stop-val (inside train_one_fold)
+        # < calibration < holdout. The calibration slice is held out of
+        # champion training entirely, then used once, post-hoc, to fit
+        # the probability calibrators.
+        champion_train_idx, calibration_idx = carve_early_stopping_val(holdout_fold.train_idx, val_frac=calibration_frac)
+        calibration_fold = Fold(train_idx=champion_train_idx, test_idx=holdout_fold.test_idx)
+
+        champion, scaler, y_pred, y_proba_raw = train_one_fold(
+            best, X_full, y_full, calibration_fold, seq_len, seed, device, final_max_epochs, final_patience
         )
+
+        _cal_pred, cal_proba_raw = predict_positions(
+            champion, scaler, X_full, calibration_idx, seq_len, y_full, best["batch_size"], device
+        )
+        calibration_result = fit_calibrators(cal_proba_raw, y_full[calibration_idx], method=calibration_method)
+        y_proba = apply_calibration(calibration_result, y_proba_raw)
 
         holdout_idx = holdout_fold.test_idx
         clf_report = classification_report_dict(y_full[holdout_idx], y_pred)
         mlflow.log_metrics(clf_report)
+        mlflow.log_metrics(
+            {
+                "holdout_ece_raw": expected_calibration_error(y_full[holdout_idx], y_proba_raw),
+                "holdout_ece_calibrated": expected_calibration_error(y_full[holdout_idx], y_proba),
+            }
+        )
 
         returns = strategy_returns(close, holdout_idx, label_end_idx[holdout_idx], y_pred, LABEL_TO_INT, cost_bps)
         champion_fin = financial_report(returns)
@@ -386,6 +437,7 @@ def run_training(
             champion_fin.net_pnl > baseline_majority.net_pnl and champion_fin.net_pnl > baseline_bh.net_pnl
         )
         mlflow.log_param("beats_baselines_net_of_cost", beats_baselines)
+        mlflow.log_param("calibration_method", calibration_method)
 
         scaled_full = scaler.transform(X_full).astype(np.float32)
         test_ds = SequenceWindowDataset(scaled_full, y_full, holdout_idx, seq_len)
@@ -394,14 +446,17 @@ def run_training(
 
         with tempfile.TemporaryDirectory() as tmp:
             cm_path = os.path.join(tmp, "confusion_matrix.png")
-            cal_path = os.path.join(tmp, "calibration_curve.png")
+            cal_raw_path = os.path.join(tmp, "calibration_curve_raw.png")
+            cal_calibrated_path = os.path.join(tmp, "calibration_curve_calibrated.png")
             equity_path = os.path.join(tmp, "equity_curve.png")
 
             plot_confusion_matrix(y_full[holdout_idx], y_pred, cm_path)
-            plot_calibration_curve(y_full[holdout_idx], y_proba, cal_path)
+            plot_calibration_curve(y_full[holdout_idx], y_proba_raw, cal_raw_path)
+            plot_calibration_curve(y_full[holdout_idx], y_proba, cal_calibrated_path)
             plot_equity_curve(returns[returns != 0], equity_path)
             mlflow.log_artifact(cm_path)
-            mlflow.log_artifact(cal_path)
+            mlflow.log_artifact(cal_raw_path)
+            mlflow.log_artifact(cal_calibrated_path)
             mlflow.log_artifact(equity_path)
 
             if mean_attn is not None:
@@ -414,6 +469,10 @@ def run_training(
             scaler_path = os.path.join(tmp, "scaler.joblib")
             joblib.dump(scaler, scaler_path)
             mlflow.log_artifact(scaler_path)
+
+            calibrators_path = os.path.join(tmp, "calibrators.joblib")
+            joblib.dump(calibration_result, calibrators_path)
+            mlflow.log_artifact(calibrators_path)
 
         # serialization_format="pickle" (not the newer default "pt2" traced
         # format): pt2 requires a strict TensorSpec signature and tracing

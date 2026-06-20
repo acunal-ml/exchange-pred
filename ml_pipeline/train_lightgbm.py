@@ -46,6 +46,7 @@ import pandas as pd
 import shap
 
 from data_pipeline.labeling import INT_TO_LABEL, LABEL_TO_INT
+from ml_pipeline.calibrate import apply_calibration, expected_calibration_error, fit_calibrators
 from ml_pipeline.common import (
     FEATURE_COLUMNS,
     NUM_CLASS,
@@ -170,6 +171,8 @@ def run_training(
     objective_metric: str = "f1_macro",
     seed: int = 42,
     experiment_name: str = "lightgbm_buy_hold_sell",
+    calibration_method: str = "isotonic",
+    calibration_frac: float = 0.15,
     labeled_df: pd.DataFrame | None = None,
 ) -> str:
     """Full train+tune+evaluate+register pipeline for one (symbol, timeframe).
@@ -177,6 +180,13 @@ def run_training(
     `labeled_df` is a testing hook: pass a pre-built labeled DataFrame
     (same shape as build_labeled_dataset's output) to skip the live data
     fetch — used by the test suite to exercise this pipeline offline.
+
+    A calibration slice is carved from the champion's training data,
+    chronologically between the early-stopping slice and the final
+    holdout (fit < early-stop-val < calibration < holdout) — required
+    so the signal aggregator's confidence threshold means something
+    (docs/03). Fit once on the champion only, never inside the CV
+    tuning loop.
 
     Returns the MLflow run ID of the parent (champion) run.
     """
@@ -239,8 +249,10 @@ def run_training(
         mlflow.log_metric(f"best_{objective_metric}", study.best_value)
 
         # Final champion: train on the full purged/embargoed tuning set,
-        # evaluate once on the never-touched holdout.
-        fit_idx, es_idx = carve_early_stopping_val(holdout_fold.train_idx)
+        # evaluate once on the never-touched holdout. Chronological order:
+        # fit < early-stop-val < calibration < holdout.
+        champion_train_idx, calibration_idx = carve_early_stopping_val(holdout_fold.train_idx, val_frac=calibration_frac)
+        fit_idx, es_idx = carve_early_stopping_val(champion_train_idx)
         champion = lgb.LGBMClassifier(
             objective="multiclass", num_class=NUM_CLASS, random_state=seed, verbosity=-1, **best_params
         )
@@ -251,12 +263,23 @@ def run_training(
             callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)],
         )
 
+        calibration_result = fit_calibrators(
+            champion.predict_proba(X.iloc[calibration_idx]), y[calibration_idx], method=calibration_method
+        )
+
         holdout_idx = holdout_fold.test_idx
         y_pred = champion.predict(X.iloc[holdout_idx])
-        y_proba = champion.predict_proba(X.iloc[holdout_idx])
+        y_proba_raw = champion.predict_proba(X.iloc[holdout_idx])
+        y_proba = apply_calibration(calibration_result, y_proba_raw)
 
         clf_report = classification_report_dict(y[holdout_idx], y_pred)
         mlflow.log_metrics(clf_report)
+        mlflow.log_metrics(
+            {
+                "holdout_ece_raw": expected_calibration_error(y[holdout_idx], y_proba_raw),
+                "holdout_ece_calibrated": expected_calibration_error(y[holdout_idx], y_proba),
+            }
+        )
 
         returns = strategy_returns(close, holdout_idx, label_end_idx[holdout_idx], y_pred, LABEL_TO_INT, cost_bps)
         champion_fin = financial_report(returns)
@@ -278,22 +301,32 @@ def run_training(
             champion_fin.net_pnl > baseline_majority.net_pnl and champion_fin.net_pnl > baseline_bh.net_pnl
         )
         mlflow.log_param("beats_baselines_net_of_cost", beats_baselines)
+        mlflow.log_param("calibration_method", calibration_method)
 
         with tempfile.TemporaryDirectory() as tmp:
             cm_path = os.path.join(tmp, "confusion_matrix.png")
-            cal_path = os.path.join(tmp, "calibration_curve.png")
+            cal_raw_path = os.path.join(tmp, "calibration_curve_raw.png")
+            cal_calibrated_path = os.path.join(tmp, "calibration_curve_calibrated.png")
             equity_path = os.path.join(tmp, "equity_curve.png")
             shap_path = os.path.join(tmp, "shap_summary.png")
 
             plot_confusion_matrix(y[holdout_idx], y_pred, cm_path)
-            plot_calibration_curve(y[holdout_idx], y_proba, cal_path)
+            plot_calibration_curve(y[holdout_idx], y_proba_raw, cal_raw_path)
+            plot_calibration_curve(y[holdout_idx], y_proba, cal_calibrated_path)
             plot_equity_curve(returns[returns != 0], equity_path)
             _plot_shap_summary(champion, X.iloc[holdout_idx], shap_path)
 
             mlflow.log_artifact(cm_path)
-            mlflow.log_artifact(cal_path)
+            mlflow.log_artifact(cal_raw_path)
+            mlflow.log_artifact(cal_calibrated_path)
             mlflow.log_artifact(equity_path)
             mlflow.log_artifact(shap_path)
+
+            import joblib
+
+            calibrators_path = os.path.join(tmp, "calibrators.joblib")
+            joblib.dump(calibration_result, calibrators_path)
+            mlflow.log_artifact(calibrators_path)
 
         model_info = mlflow.lightgbm.log_model(champion, name="model")
 
