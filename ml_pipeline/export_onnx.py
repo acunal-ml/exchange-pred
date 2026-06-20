@@ -164,6 +164,20 @@ def export_champion(
         if downloaded is not None:
             extra_paths.append(downloaded)
 
+    # meta.json lets model_loader.load_model_bundle() resolve model_type/
+    # seq_len/n_features without the caller having to hardcode them again
+    # at serve time — one source of truth for "what shape does this
+    # artifact expect", written once here at export time.
+    import json
+
+    meta_path = output_dir / "meta.json"
+    meta_path.write_text(
+        json.dumps(
+            {"model_type": model_type, "registered_name": registered_name, "n_features": n_features, "seq_len": seq_len}
+        )
+    )
+    extra_paths.append(meta_path)
+
     logger.info("Exported champion %s -> %s (+%d extra artifacts)", registered_name, onnx_path, len(extra_paths))
     return ExportedArtifact(onnx_path=onnx_path, extra_artifact_paths=extra_paths)
 

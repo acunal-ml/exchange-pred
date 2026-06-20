@@ -1,5 +1,6 @@
 # HF Spaces / serving — lightweight. No torch, no optuna, no mlflow.
 streamlit
+plotly
 pandas<3
 numpy
 yfinance
@@ -12,3 +13,5 @@ pydantic-settings
 python-dotenv
 onnxruntime
 lightgbm
+joblib
+scikit-learn

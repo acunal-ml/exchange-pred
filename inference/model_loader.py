@@ -60,13 +60,24 @@ def ensure_local_artifacts(local_dir: Path, hf_dataset_repo: str | None = None, 
 
 
 def load_model_bundle(
-    model_type: str,
-    local_dir: Path,
+    model_type: str | None = None,
+    local_dir: Path = None,
     seq_len: int | None = None,
     hf_dataset_repo: str | None = None,
     path_in_repo: str = "",
 ) -> ModelBundle:
     resolved_dir = ensure_local_artifacts(local_dir, hf_dataset_repo, path_in_repo)
+
+    meta_path = resolved_dir / "meta.json"
+    if meta_path.exists():
+        import json
+
+        meta = json.loads(meta_path.read_text())
+        model_type = model_type or meta.get("model_type")
+        seq_len = seq_len or meta.get("seq_len")
+
+    if model_type is None:
+        raise ValueError("model_type is required (no meta.json found to infer it from)")
 
     session = ort.InferenceSession(str(resolved_dir / "model.onnx"), providers=["CPUExecutionProvider"])
 
@@ -80,6 +91,18 @@ def load_model_bundle(
         raise ValueError("seq_len is required to load an LSTM model bundle")
 
     return ModelBundle(model_type=model_type, session=session, scaler=scaler, calibrators=calibrators, seq_len=seq_len)
+
+
+def try_load_model_bundle(model_type: str, local_dir: Path, **kwargs) -> ModelBundle | None:
+    """Like load_model_bundle, but returns None instead of raising when
+    no artifact is available locally or on the HF Hub — callers (the UI)
+    must degrade to indicator-only fusion rather than crash when a given
+    (symbol, timeframe) has no trained champion yet."""
+    try:
+        return load_model_bundle(model_type, local_dir, **kwargs)
+    except (FileNotFoundError, ValueError) as exc:
+        logger.info("No %s model bundle available at %s (%s)", model_type, local_dir, exc)
+        return None
 
 
 def _softmax(logits: np.ndarray) -> np.ndarray:
