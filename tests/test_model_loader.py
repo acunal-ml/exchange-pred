@@ -62,6 +62,9 @@ def test_load_lstm_bundle_without_seq_len_raises(tmp_path):
         load_model_bundle(model_type="lstm", local_dir=tmp_path, seq_len=None)
 
 
-def test_ensure_local_artifacts_raises_without_model_or_hf_repo(tmp_path):
+def test_ensure_local_artifacts_raises_without_model_or_hf_repo(tmp_path, monkeypatch):
+    # Isolate from the real local .env, which has a genuine HF_DATASET_REPO
+    # configured for this project's actual deployment.
+    monkeypatch.setattr("inference.model_loader.settings.hf_dataset_repo", None)
     with pytest.raises(FileNotFoundError):
         ensure_local_artifacts(tmp_path, hf_dataset_repo=None)

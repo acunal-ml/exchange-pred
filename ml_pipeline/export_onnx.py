@@ -184,22 +184,27 @@ def export_champion(
 
 def push_to_hf_hub(artifact: ExportedArtifact, path_in_repo: str = "") -> str | None:
     """Upload the exported artifact directory to the configured HF
-    Dataset repo. Returns the repo URL, or None if no token/repo is
-    configured (this is expected in local dev — the export still
-    succeeds locally, it just isn't published) — see docs/04: artifacts
-    are pulled from an HF Hub/Dataset repo at Space startup, never
-    committed into the Space repo itself.
+    Dataset repo. Returns the repo URL, or None if no repo is configured
+    (this is expected in local dev — the export still succeeds locally,
+    it just isn't published) — see docs/04: artifacts are pulled from an
+    HF Hub/Dataset repo at Space startup, never committed into the Space
+    repo itself.
+
+    `HF_HUB_TOKEN` is optional here: if unset, huggingface_hub's HfApi
+    falls back to the credentials cached by `hf auth login` (or the
+    `HF_TOKEN` env var) — only the target repo actually needs to be
+    configured.
     """
-    if not settings.hf_hub_token or not settings.hf_dataset_repo:
+    if not settings.hf_dataset_repo:
         logger.warning(
-            "HF_HUB_TOKEN / HF_DATASET_REPO not configured — skipping upload, artifact stays local at %s",
+            "HF_DATASET_REPO not configured — skipping upload, artifact stays local at %s",
             artifact.onnx_path.parent,
         )
         return None
 
     from huggingface_hub import HfApi
 
-    api = HfApi(token=settings.hf_hub_token)
+    api = HfApi(token=settings.hf_hub_token or None)
     api.upload_folder(
         folder_path=str(artifact.onnx_path.parent),
         repo_id=settings.hf_dataset_repo,

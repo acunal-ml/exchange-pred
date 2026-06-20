@@ -54,7 +54,7 @@ def ensure_local_artifacts(local_dir: Path, hf_dataset_repo: str | None = None, 
         repo_id=repo,
         repo_type="dataset",
         allow_patterns=[f"{path_in_repo}*"] if path_in_repo else None,
-        token=settings.hf_hub_token,
+        token=settings.hf_hub_token or None,
     )
     return Path(downloaded) / path_in_repo if path_in_repo else Path(downloaded)
 
