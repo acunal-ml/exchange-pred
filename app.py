@@ -51,9 +51,15 @@ DISCLAIMER = (
 
 @st.cache_resource(show_spinner=False)
 def _load_bundles(symbol: str, timeframe: str):
-    model_dir = MODELS_DIR / f"{symbol}_{timeframe}"
-    lgbm_bundle = try_load_model_bundle("lightgbm", model_dir / "lightgbm")
-    lstm_bundle = try_load_model_bundle("lstm", model_dir / "lstm")
+    # path_in_repo mirrors the local layout (ml_pipeline/models/{symbol}_
+    # {timeframe}/{model_type}) inside the configured HF dataset repo —
+    # without it, the HF Hub fallback in ensure_local_artifacts() would
+    # download the whole repo and look for model.onnx at its root instead
+    # of the right subfolder.
+    repo_subdir = f"{symbol}_{timeframe}"
+    model_dir = MODELS_DIR / repo_subdir
+    lgbm_bundle = try_load_model_bundle("lightgbm", model_dir / "lightgbm", path_in_repo=f"{repo_subdir}/lightgbm")
+    lstm_bundle = try_load_model_bundle("lstm", model_dir / "lstm", path_in_repo=f"{repo_subdir}/lstm")
     return lgbm_bundle, lstm_bundle
 
 
