@@ -1,0 +1,10 @@
+# Local-only training stack. Never shipped to HF Spaces (wastes build
+# time/RAM, risks OOM on cold start — see docs/04).
+-r requirements.txt
+torch
+optuna
+mlflow
+ta-lib
+pandas-ta
+scikit-learn
+shap

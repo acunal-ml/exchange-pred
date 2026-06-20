@@ -1,0 +1,45 @@
+fin_predict_hf/
+├── docs/                       # AI bağlamı ve "anayasa" (.md dosyaları)
+│   ├── 01_project_scope_and_ui.md
+│   ├── 02_data_architecture_and_features.md
+│   ├── 03_ai_models_and_mlops.md
+│   ├── 04_deployment_and_environment.md
+│   └── skill.md
+├── config/                     # YENİ: Merkezi ayar yönetimi
+│   └── settings.py             # pydantic-settings; .env'i tipli okur (Redis/DB URL, API keyler)
+├── core/                       # Sistemin kalbi: Veritabanı ve Önbellek
+│   ├── db_setup.py             # SQLite (WAL modu, composite PRIMARY KEY, UPSERT)
+│   └── cache.py                # DEĞİŞTİ: redis_cache.py yerine soyut CacheBackend arayüzü
+│                               #   -> RedisBackend (lokal) + TTLCacheBackend (HF fallback)
+├── data_pipeline/              # Veri çekme ve Feature Engineering
+│   ├── sources/                # YENİ: kaynakları arayüz arkasına al
+│   │   ├── base.py             # DataSource arayüzü (retry/backoff + fallback)
+│   │   ├── ingest_yfinance.py  # Nasdaq ve Emtia (auto_adjust=True)
+│   │   └── ingest_tvdatafeed.py# BIST (kırılgan/unofficial -> wrap et)
+│   ├── feature_engine.py       # TA-Lib / pandas-ta; sadece KAPANMIŞ mumlar
+│   └── labeling.py             # YENİ: triple-barrier + ATR ölçekli etiketleme
+├── ml_pipeline/                # Yapay Zeka ve MLOps (SADECE LOKAL EĞİTİM)
+│   ├── notebooks/              # Prototipleme (Shift+Enter alanı)
+│   ├── validation.py           # YENİ: purged/embargoed walk-forward CV (sızıntı önleme)
+│   ├── train_lightgbm.py       # Optuna + MLflow
+│   ├── train_lstm.py           # 4GB VRAM: grad accumulation, fp16, grad clipping
+│   ├── calibrate.py            # YENİ: olasılık kalibrasyonu (isotonic/Platt)
+│   ├── export_onnx.py          # YENİ: champion -> ONNX (+int8) export
+│   ├── mlruns/                 # MLflow lokal takip + Model Registry
+│   └── models/                 # HF'e gidecek champion (ONNX) + scaler/calibrator
+├── inference/                  # YENİ: SADECE çıkarım (HF'de çalışan kısım)
+│   ├── analysis_engine.py      # DRY tek motor: cache->db->api, feature, predict
+│   ├── signal_aggregator.py    # YENİ: soft-voting füzyon (Buy/Hold/Sell + confidence)
+│   └── model_loader.py         # ONNX modeli HF Hub/Dataset repo'dan yükler
+├── backtest/                   # YENİ: out-of-sample track record (UI paneli için)
+│   └── walk_forward.py
+├── tests/                      # YENİ: en azından labeling + leakage + aggregator testleri
+├── utils/                      # YENİ: logging, timezone (UTC) yardımcıları
+│   └── logging_config.py
+├── app.py                      # HF ana UI (Gradio/Streamlit) -> inference/ kullanır
+├── requirements.txt            # HF/serving: hafif (onnxruntime, gradio... torch YOK)
+├── requirements-train.txt      # YENİ: lokal eğitim: torch, optuna, mlflow, TA-Lib
+├── .gitignore                  # YENİ: mlruns/, *.db, .env, __pycache__ vb.
+├── .env.example                # Redis/DB URL, API keyler (sadece şablon; gerçeği HF Secrets'ta)
+├── Dockerfile                  # (opsiyonel) lokal Redis + reprodüksiyon için
+└── README.md

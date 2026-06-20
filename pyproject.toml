@@ -1,0 +1,20 @@
+[project]
+name = "borsacim"
+version = "0.1.0"
+description = "Add your description here"
+requires-python = ">=3.12"
+dependencies = [
+    "cachetools>=7.1.4",
+    "diskcache>=5.6.3",
+    "numpy>=2.4.6",
+    "pandas>=3.0.3",
+    "pydantic-settings>=2.14.2",
+    "python-dotenv>=1.2.2",
+    "redis>=8.0.0",
+    "tenacity>=9.1.4",
+    "tvdatafeed",
+    "yfinance>=1.4.1",
+]
+
+[tool.uv.sources]
+tvdatafeed = { git = "https://github.com/rongardF/tvdatafeed.git" }

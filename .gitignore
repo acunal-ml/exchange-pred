@@ -1,0 +1,21 @@
+__pycache__/
+*.py[cod]
+.venv/
+.python-version
+
+# Secrets — never commit real values, only .env.example
+.env
+
+# Data / DB (SQLite is a rebuildable cache, not source of truth)
+data/
+*.db
+*.db-wal
+*.db-shm
+
+# MLOps artifacts (added in the ML phase)
+mlruns/
+ml_pipeline/models/
+
+# IDE / OS
+.vscode/
+.DS_Store

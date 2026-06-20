@@ -1,0 +1,14 @@
+# HF Spaces / serving — lightweight. No torch, no optuna, no mlflow.
+streamlit
+pandas
+numpy
+yfinance
+tvdatafeed @ git+https://github.com/rongardF/tvdatafeed.git
+cachetools
+diskcache
+redis
+tenacity
+pydantic-settings
+python-dotenv
+onnxruntime
+lightgbm
