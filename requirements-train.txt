@@ -1,10 +1,15 @@
 # Local-only training stack. Never shipped to HF Spaces (wastes build
 # time/RAM, risks OOM on cold start — see docs/04).
+#
+# Indicators (RSI/MACD/Bollinger/ATR) are hand-implemented in
+# data_pipeline/feature_engine.py — TA-Lib needs a compiled C extension
+# that's awkward on HF, and pandas-ta pins numba which caps numpy<2.3,
+# conflicting with this project's numpy 2.x. Neither is a dependency here.
 -r requirements.txt
 torch
 optuna
-mlflow
-ta-lib
-pandas-ta
+mlflow>=2.10
 scikit-learn
 shap
+matplotlib
+joblib

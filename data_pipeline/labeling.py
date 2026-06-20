@@ -33,7 +33,11 @@ HORIZON_DEFAULTS = {
     "long": {"k_upper": 3.0, "k_lower": 3.0},    # 1M+
 }
 
-LABELS = {1: "Buy", 0: "Hold", -1: "Sell"}
+# Canonical string<->int encoding shared by training (LightGBM needs
+# contiguous 0..n-1 class ids) and inference (signal_aggregator must
+# decode the same way). Defined once here so train/serve never drift.
+LABEL_TO_INT = {"Sell": 0, "Hold": 1, "Buy": 2}
+INT_TO_LABEL = {v: k for k, v in LABEL_TO_INT.items()}
 
 
 def triple_barrier_labels(
@@ -103,7 +107,7 @@ def triple_barrier_labels(
     )
 
 
-def attach_labels(
+def label_features(
     df: pd.DataFrame,
     horizon_bars: int,
     horizon_bucket: str = "medium",
@@ -111,7 +115,22 @@ def attach_labels(
     k_lower: float | None = None,
     **kwargs,
 ) -> pd.DataFrame:
-    """Convenience wrapper: apply HORIZON_DEFAULTS and drop unlabelable rows."""
+    """Apply HORIZON_DEFAULTS and join labels — keeps every row, no drop.
+
+    Unlabelable rows (tail rows without a full forward window, or
+    warm-up rows without a valid ATR) get label=NaN / label_end_idx=-1,
+    but their price stays in the frame. This matters because
+    `label_end_idx` is a *positional* index: an earlier row's barrier
+    touch can legitimately point at one of these otherwise-unlabelable
+    tail rows as its exit price. Dropping such rows (as the now-removed
+    behavior of `attach_labels` used to do) silently invalidates every
+    `label_end_idx` that referenced a dropped position — exactly the
+    bug `ml_pipeline.validation` and `ml_pipeline.train_lightgbm` rely
+    on not having, since they index `close`/`label_end_idx` by raw
+    position. Callers that need only labelable rows must filter via
+    `label_end_idx >= 0` (or `label.notna()`) while keeping the index
+    space these other modules expect — never via positional truncation.
+    """
     defaults = HORIZON_DEFAULTS[horizon_bucket]
     labels_df = triple_barrier_labels(
         df,
@@ -120,5 +139,24 @@ def attach_labels(
         k_lower=k_lower if k_lower is not None else defaults["k_lower"],
         **kwargs,
     )
-    out = df.join(labels_df)
-    return out.dropna(subset=["label"])
+    return df.join(labels_df)
+
+
+def attach_labels(
+    df: pd.DataFrame,
+    horizon_bars: int,
+    horizon_bucket: str = "medium",
+    k_upper: float | None = None,
+    k_lower: float | None = None,
+    **kwargs,
+) -> pd.DataFrame:
+    """Convenience wrapper: label_features + drop unlabelable rows.
+
+    Only safe for callers that don't rely on `label_end_idx` as a
+    position into this same returned frame (it drops a tail slice,
+    which shifts positions). Training/validation code that needs
+    positional exit-price lookups must use `label_features` instead.
+    """
+    return label_features(
+        df, horizon_bars=horizon_bars, horizon_bucket=horizon_bucket, k_upper=k_upper, k_lower=k_lower, **kwargs
+    ).dropna(subset=["label"])

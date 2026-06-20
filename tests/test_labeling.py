@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 
 from data_pipeline.feature_engine import atr
-from data_pipeline.labeling import attach_labels, triple_barrier_labels
+from data_pipeline.labeling import attach_labels, label_features, triple_barrier_labels
 
 
 def _df_with_atr(closes: list[float]) -> pd.DataFrame:
@@ -70,3 +70,24 @@ def test_attach_labels_drops_unlabelable_rows():
     assert out["label"].notna().all()
     assert len(out) < len(df)
     assert {"label", "label_end_idx", "upper_barrier", "lower_barrier"}.issubset(out.columns)
+
+
+def test_label_features_preserves_every_row_and_position():
+    # Regression test: label_end_idx is a *positional* index into this
+    # same frame. If unlabelable tail rows were dropped (as attach_labels
+    # does), an earlier row's label_end_idx pointing at one of those tail
+    # positions would go out of bounds — exactly the bug this function
+    # exists to avoid for ml_pipeline.validation / train_lightgbm.
+    closes = [100 + i * 0.01 for i in range(20)]
+    df = _df_with_atr(closes)
+    out = label_features(df, horizon_bars=5, horizon_bucket="medium")
+
+    assert len(out) == len(df)
+    assert out["label"].isna().any()  # tail rows remain, unlabeled
+
+    valid = out["label_end_idx"] >= 0
+    assert (out.loc[valid, "label_end_idx"] < len(out)).all()
+    # every referenced exit position must still have real price data
+    close_values = out["close"].to_numpy()
+    for end_idx in out.loc[valid, "label_end_idx"]:
+        assert not np.isnan(close_values[int(end_idx)])
