@@ -18,3 +18,8 @@ dependencies = [
 
 [tool.uv.sources]
 tvdatafeed = { git = "https://github.com/rongardF/tvdatafeed.git" }
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+]
