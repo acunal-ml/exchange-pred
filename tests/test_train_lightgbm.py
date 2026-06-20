@@ -49,7 +49,7 @@ def test_feature_set_hash_is_stable_and_order_sensitive():
 
 def test_carve_early_stopping_val_uses_chronological_tail():
     train_idx = np.arange(20)
-    fit_idx, es_idx = tl._carve_early_stopping_val(train_idx, val_frac=0.2)
+    fit_idx, es_idx = tl.carve_early_stopping_val(train_idx, val_frac=0.2)
     assert fit_idx.max() < es_idx.min()
     assert len(es_idx) == 4
 

@@ -19,3 +19,6 @@ ml_pipeline/models/
 # IDE / OS
 .vscode/
 .DS_Store
+
+# Claude Code harness-internal state (not project content)
+.claude/

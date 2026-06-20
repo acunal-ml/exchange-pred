@@ -30,12 +30,9 @@ the "champion" alias.
 """
 from __future__ import annotations
 
-import hashlib
 import os
-import random
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
 
 import lightgbm as lgb
 import matplotlib
@@ -47,12 +44,19 @@ import numpy as np
 import optuna
 import pandas as pd
 import shap
-from sklearn.metrics import ConfusionMatrixDisplay, confusion_matrix, f1_score, precision_recall_fscore_support
 
-from data_pipeline.feature_engine import compute_features, drop_warmup
-from data_pipeline.labeling import INT_TO_LABEL, LABEL_TO_INT, label_features
-from data_pipeline.sources.ingest_tvdatafeed import TVDatafeedSource
-from data_pipeline.sources.ingest_yfinance import YFinanceSource
+from data_pipeline.labeling import INT_TO_LABEL, LABEL_TO_INT
+from ml_pipeline.common import (
+    FEATURE_COLUMNS,
+    NUM_CLASS,
+    build_labeled_dataset,
+    carve_early_stopping_val,
+    classification_report_dict,
+    feature_set_hash,
+    log_metrics_safe,
+    set_global_seed,
+)
+from ml_pipeline.eval_plots import plot_calibration_curve, plot_confusion_matrix, plot_equity_curve
 from ml_pipeline.financial_metrics import (
     DEFAULT_COST_BPS,
     buy_and_hold_baseline,
@@ -65,77 +69,6 @@ from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-FEATURE_COLUMNS = [
-    "rsi_14",
-    "macd",
-    "macd_signal",
-    "macd_hist",
-    "bb_mid",
-    "bb_upper",
-    "bb_lower",
-    "bb_percent_b",
-    "atr_14",
-]
-
-NUM_CLASS = 3  # Sell, Hold, Buy — see data_pipeline.labeling.LABEL_TO_INT
-
-
-def set_global_seed(seed: int) -> None:
-    random.seed(seed)
-    np.random.seed(seed)
-
-
-def feature_set_hash(feature_columns: list[str]) -> str:
-    return hashlib.sha256(",".join(feature_columns).encode()).hexdigest()[:12]
-
-
-def build_labeled_dataset(
-    symbol: str,
-    timeframe: str,
-    source: str,
-    lookback_days: int,
-    horizon_bars: int,
-    horizon_bucket: str,
-) -> pd.DataFrame:
-    """Fetch -> feature -> label, reusing the exact same code path as
-    inference (docs/01 DRY requirement) so train/serve never diverge.
-
-    Uses `label_features` (not `attach_labels`): this pipeline indexes
-    `close`/`label_end_idx` by raw position throughout (validation folds,
-    financial-metric exit lookups), so unlabelable rows must stay in the
-    frame rather than be dropped — see label_features' docstring.
-    """
-    end = datetime.now(timezone.utc)
-    start = end - timedelta(days=lookback_days)
-
-    data_source = YFinanceSource() if source == "yfinance" else TVDatafeedSource()
-    df = data_source.fetch_ohlcv(symbol, timeframe, start, end)
-
-    feats = drop_warmup(compute_features(df))
-    labeled = label_features(feats, horizon_bars=horizon_bars, horizon_bucket=horizon_bucket)
-    return labeled
-
-
-def _carve_early_stopping_val(train_idx: np.ndarray, val_frac: float = 0.15) -> tuple[np.ndarray, np.ndarray]:
-    """Split a (chronologically sorted) train index into fit/early-stop-val
-    using the most recent bars as validation — never a random split."""
-    n_val = max(1, int(len(train_idx) * val_frac))
-    return train_idx[:-n_val], train_idx[-n_val:]
-
-
-def classification_report_dict(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
-    precision, recall, f1, _ = precision_recall_fscore_support(
-        y_true, y_pred, labels=[0, 1, 2], average=None, zero_division=0
-    )
-    report = {
-        "f1_macro": f1_score(y_true, y_pred, labels=[0, 1, 2], average="macro", zero_division=0),
-    }
-    for class_id, name in INT_TO_LABEL.items():
-        report[f"precision_{name.lower()}"] = float(precision[class_id])
-        report[f"recall_{name.lower()}"] = float(recall[class_id])
-        report[f"f1_{name.lower()}"] = float(f1[class_id])
-    return report
-
 
 def _train_one_fold(
     params: dict,
@@ -145,7 +78,7 @@ def _train_one_fold(
     test_idx: np.ndarray,
     seed: int,
 ) -> tuple[np.ndarray, np.ndarray]:
-    fit_idx, es_idx = _carve_early_stopping_val(train_idx)
+    fit_idx, es_idx = carve_early_stopping_val(train_idx)
 
     model = lgb.LGBMClassifier(
         objective="multiclass",
@@ -210,44 +143,6 @@ def _objective(trial: optuna.Trial, ctx: TuningContext, objective_metric: str) -
         mlflow.log_metric(f"mean_{objective_metric}", mean_score)
 
     return mean_score
-
-
-def _plot_confusion_matrix(y_true: np.ndarray, y_pred: np.ndarray, path: str) -> None:
-    fig, ax = plt.subplots(figsize=(5, 4))
-    cm = confusion_matrix(y_true, y_pred, labels=[0, 1, 2])
-    ConfusionMatrixDisplay(cm, display_labels=[INT_TO_LABEL[i] for i in (0, 1, 2)]).plot(ax=ax, colorbar=False)
-    fig.tight_layout()
-    fig.savefig(path)
-    plt.close(fig)
-
-
-def _plot_calibration_curve(y_true: np.ndarray, proba: np.ndarray, path: str) -> None:
-    fig, ax = plt.subplots(figsize=(5, 4))
-    for class_id, name in INT_TO_LABEL.items():
-        binary_true = (y_true == class_id).astype(int)
-        bin_edges = np.linspace(0, 1, 11)
-        bin_idx = np.clip(np.digitize(proba[:, class_id], bin_edges) - 1, 0, len(bin_edges) - 2)
-        observed = [binary_true[bin_idx == b].mean() if (bin_idx == b).any() else np.nan for b in range(len(bin_edges) - 1)]
-        predicted = [proba[bin_idx == b, class_id].mean() if (bin_idx == b).any() else np.nan for b in range(len(bin_edges) - 1)]
-        ax.plot(predicted, observed, marker="o", label=name)
-    ax.plot([0, 1], [0, 1], "--", color="gray")
-    ax.set_xlabel("Predicted probability")
-    ax.set_ylabel("Observed frequency")
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(path)
-    plt.close(fig)
-
-
-def _plot_equity_curve(returns: np.ndarray, path: str) -> None:
-    equity = np.cumsum(returns)
-    fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(equity)
-    ax.set_xlabel("Trade #")
-    ax.set_ylabel("Cumulative return")
-    fig.tight_layout()
-    fig.savefig(path)
-    plt.close(fig)
 
 
 def _plot_shap_summary(model: lgb.LGBMClassifier, X_sample: pd.DataFrame, path: str) -> None:
@@ -345,7 +240,7 @@ def run_training(
 
         # Final champion: train on the full purged/embargoed tuning set,
         # evaluate once on the never-touched holdout.
-        fit_idx, es_idx = _carve_early_stopping_val(holdout_fold.train_idx)
+        fit_idx, es_idx = carve_early_stopping_val(holdout_fold.train_idx)
         champion = lgb.LGBMClassifier(
             objective="multiclass", num_class=NUM_CLASS, random_state=seed, verbosity=-1, **best_params
         )
@@ -368,7 +263,7 @@ def run_training(
         baseline_majority = majority_class_baseline(len(holdout_idx))
         baseline_bh = buy_and_hold_baseline(close, holdout_idx, cost_bps)
 
-        mlflow.log_metrics(
+        log_metrics_safe(
             {
                 "holdout_net_pnl": champion_fin.net_pnl,
                 "holdout_sharpe": champion_fin.sharpe,
@@ -390,9 +285,9 @@ def run_training(
             equity_path = os.path.join(tmp, "equity_curve.png")
             shap_path = os.path.join(tmp, "shap_summary.png")
 
-            _plot_confusion_matrix(y[holdout_idx], y_pred, cm_path)
-            _plot_calibration_curve(y[holdout_idx], y_proba, cal_path)
-            _plot_equity_curve(returns[returns != 0], equity_path)
+            plot_confusion_matrix(y[holdout_idx], y_pred, cm_path)
+            plot_calibration_curve(y[holdout_idx], y_proba, cal_path)
+            plot_equity_curve(returns[returns != 0], equity_path)
             _plot_shap_summary(champion, X.iloc[holdout_idx], shap_path)
 
             mlflow.log_artifact(cm_path)

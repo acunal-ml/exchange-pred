@@ -19,6 +19,7 @@ dependencies = [
     "scikit-learn>=1.9.0",
     "shap>=0.52.0",
     "tenacity>=9.1.4",
+    "torch>=2.12.1",
     "tvdatafeed",
     "yfinance>=1.4.1",
 ]
