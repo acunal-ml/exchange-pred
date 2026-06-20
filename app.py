@@ -12,12 +12,25 @@ import plotly.graph_objects as go
 import streamlit as st
 
 from backtest.walk_forward import run_backtest
+from core.db_setup import init_db
 from data_pipeline.feature_engine import compute_features, drop_warmup
 from inference.analysis_engine import analyze, drop_unclosed_candle, fetch_ohlcv_cached
 from inference.model_loader import try_load_model_bundle
 from ml_pipeline.common import FEATURE_COLUMNS
 
 st.set_page_config(page_title="Borsacım — AI Market Signals", layout="wide")
+
+
+@st.cache_resource(show_spinner=False)
+def _init_db_once() -> None:
+    # HF Spaces' disk is ephemeral (docs/04) — the SQLite schema must be
+    # (re)created on every fresh container, not just once at dev-machine
+    # setup time. st.cache_resource ensures this runs once per process,
+    # not on every script rerun.
+    init_db()
+
+
+_init_db_once()
 
 MARKETS = {
     "NASDAQ": {"source_kind": "yfinance", "example": "AAPL"},
