@@ -13,3 +13,6 @@ scikit-learn
 shap
 matplotlib
 joblib
+onnxmltools
+onnxconverter-common
+huggingface_hub
