@@ -2,6 +2,12 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
+# git is required at pip-install time: requirements.txt pulls tvdatafeed
+# straight from its GitHub repo (no PyPI release exists) — slim base
+# images don't ship git, so pip's clone step fails without this.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
+
 # Serving-only deps — docs/04: no torch/optuna/mlflow on HF, keep the
 # image lean for the 2 vCPU / 16GB free-tier box.
 COPY requirements.txt .
