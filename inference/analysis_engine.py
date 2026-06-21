@@ -108,7 +108,11 @@ def fetch_ohlcv_cached(
 
     is_stale = df.empty or (end - df.index[-1]) > TIMEFRAME_DURATIONS[timeframe] * 2
     if is_stale:
-        source = YFinanceSource() if market in ("NASDAQ", "COMMODITY") else TVDatafeedSource()
+        # Case-insensitive: app.py's MARKETS dict key is "Commodity"
+        # (mixed case), not "COMMODITY" — comparing exact-case here
+        # silently routed Commodity tickers to TVDatafeedSource (which
+        # hardcodes exchange="BIST") instead of YFinanceSource.
+        source = YFinanceSource() if market.upper() in ("NASDAQ", "COMMODITY") else TVDatafeedSource()
         fetched = source.fetch_ohlcv(symbol, timeframe, start, end)
         upsert_ohlcv_rows(to_ohlcv_rows(fetched, asset_id=f"{market}:{symbol}", timeframe=timeframe))
         df = fetched

@@ -4,7 +4,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from inference.analysis_engine import analyze, drop_unclosed_candle
+from inference import analysis_engine
+from inference.analysis_engine import analyze, drop_unclosed_candle, fetch_ohlcv_cached
 
 
 def _synthetic_ohlcv(n: int = 100, freq: str = "1D", seed: int = 0) -> pd.DataFrame:
@@ -38,6 +39,39 @@ def test_drop_unclosed_candle_handles_empty_df():
     df = pd.DataFrame(columns=["close"])
     out = drop_unclosed_candle(df, "1D")
     assert out.empty
+
+
+@pytest.mark.parametrize(
+    ("market", "expected_source"),
+    [
+        ("NASDAQ", "yfinance"),
+        ("Commodity", "yfinance"),  # app.py's MARKETS key casing — regression for the case-mismatch bug
+        ("COMMODITY", "yfinance"),
+        ("BIST", "tvdatafeed"),
+    ],
+)
+def test_fetch_ohlcv_cached_routes_market_to_correct_source(monkeypatch, market, expected_source):
+    used = []
+
+    class _FakeYFinance:
+        def fetch_ohlcv(self, symbol, timeframe, start, end):
+            used.append("yfinance")
+            return _synthetic_ohlcv(n=5)
+
+    class _FakeTVDatafeed:
+        def fetch_ohlcv(self, symbol, timeframe, start, end):
+            used.append("tvdatafeed")
+            return _synthetic_ohlcv(n=5)
+
+    monkeypatch.setattr(analysis_engine, "YFinanceSource", _FakeYFinance)
+    monkeypatch.setattr(analysis_engine, "TVDatafeedSource", _FakeTVDatafeed)
+    monkeypatch.setattr(analysis_engine, "fetch_ohlcv", lambda *a, **k: [])
+    monkeypatch.setattr(analysis_engine, "upsert_ohlcv_rows", lambda *a, **k: None)
+    monkeypatch.setattr(analysis_engine.cache, "get", lambda *a, **k: None)
+    monkeypatch.setattr(analysis_engine.cache, "set", lambda *a, **k: None)
+
+    fetch_ohlcv_cached("SYM", market, "1D", lookback_days=10)
+    assert used == [expected_source]
 
 
 def test_analyze_with_indicators_only_returns_standardized_result():
