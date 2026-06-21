@@ -61,8 +61,11 @@ from ml_pipeline.eval_plots import plot_calibration_curve, plot_confusion_matrix
 from ml_pipeline.financial_metrics import (
     DEFAULT_COST_BPS,
     buy_and_hold_baseline,
+    compounded_equity_curve,
+    compounded_report,
     financial_report,
     majority_class_baseline,
+    sequential_trade_returns,
     strategy_returns,
 )
 from ml_pipeline.lstm_model import AttentionLSTM
@@ -414,8 +417,18 @@ def run_training(
             }
         )
 
+        # See train_lightgbm.py's matching block for why the gate uses
+        # compounded_report (single capital pool, sequentially
+        # compounded) rather than financial_report (sums every signal's
+        # return independently, overstating returns once trade windows
+        # overlap — routine here, since a triple-barrier trade can stay
+        # open for horizon_bars while a new signal fires every bar).
         returns = strategy_returns(close, holdout_idx, label_end_idx[holdout_idx], y_pred, LABEL_TO_INT, cost_bps)
         champion_fin = financial_report(returns)
+
+        trade_returns = sequential_trade_returns(close, holdout_idx, label_end_idx[holdout_idx], y_pred, LABEL_TO_INT, cost_bps)
+        champion_compounded = compounded_report(trade_returns)
+
         baseline_majority = majority_class_baseline(len(holdout_idx))
         baseline_bh = buy_and_hold_baseline(close, holdout_idx, cost_bps)
 
@@ -425,12 +438,19 @@ def run_training(
                 "holdout_sharpe": champion_fin.sharpe,
                 "holdout_n_trades": champion_fin.n_trades,
                 "holdout_win_rate": champion_fin.win_rate,
+                "holdout_compounded_return": champion_compounded.total_return,
+                "holdout_compounded_sharpe": champion_compounded.sharpe,
+                "holdout_compounded_n_trades": champion_compounded.n_trades,
+                "holdout_compounded_win_rate": champion_compounded.win_rate,
+                "holdout_compounded_max_drawdown": champion_compounded.max_drawdown,
                 "baseline_majority_net_pnl": baseline_majority.net_pnl,
                 "baseline_buy_and_hold_net_pnl": baseline_bh.net_pnl,
             }
         )
 
-        beats_baselines = champion_fin.net_pnl > baseline_majority.net_pnl and champion_fin.net_pnl > baseline_bh.net_pnl
+        beats_baselines = (
+            champion_compounded.total_return > baseline_majority.net_pnl and champion_compounded.total_return > baseline_bh.net_pnl
+        )
         mlflow.log_param("beats_baselines_net_of_cost", beats_baselines)
         mlflow.log_param("calibration_method", calibration_method)
 
@@ -448,7 +468,7 @@ def run_training(
             plot_confusion_matrix(y_full[holdout_idx], y_pred, cm_path)
             plot_calibration_curve(y_full[holdout_idx], y_proba_raw, cal_raw_path)
             plot_calibration_curve(y_full[holdout_idx], y_proba, cal_calibrated_path)
-            plot_equity_curve(returns[returns != 0], equity_path)
+            plot_equity_curve(compounded_equity_curve(trade_returns), equity_path)
             mlflow.log_artifact(cm_path)
             mlflow.log_artifact(cal_raw_path)
             mlflow.log_artifact(cal_calibrated_path)

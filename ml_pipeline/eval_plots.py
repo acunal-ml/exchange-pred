@@ -43,10 +43,14 @@ def plot_calibration_curve(y_true: np.ndarray, proba: np.ndarray, path: str) -> 
     plt.close(fig)
 
 
-def plot_equity_curve(returns: np.ndarray, path: str) -> None:
-    equity = np.cumsum(returns)
+def plot_equity_curve(equity_curve: np.ndarray, path: str) -> None:
+    """Plots a precomputed cumulative-return curve — callers decide the
+    methodology (compounded, via ml_pipeline.financial_metrics.
+    compounded_equity_curve, is the realistic one; this function doesn't
+    take raw per-trade returns anymore so it can't silently default to
+    the overstated additive sum)."""
     fig, ax = plt.subplots(figsize=(6, 4))
-    ax.plot(equity)
+    ax.plot(equity_curve)
     ax.set_xlabel("Trade #")
     ax.set_ylabel("Cumulative return")
     fig.tight_layout()

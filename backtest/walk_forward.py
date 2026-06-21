@@ -31,7 +31,7 @@ from data_pipeline.feature_engine import compute_features, drop_warmup
 from data_pipeline.labeling import HORIZON_DEFAULTS, LABEL_TO_INT, triple_barrier_labels
 from inference.model_loader import ModelBundle, predict_proba
 from inference.signal_aggregator import combine_indicator_votes, fuse_signals
-from ml_pipeline.financial_metrics import DEFAULT_COST_BPS, financial_report, strategy_returns
+from ml_pipeline.financial_metrics import DEFAULT_COST_BPS, compounded_report, sequential_trade_returns
 
 
 @dataclass
@@ -43,14 +43,6 @@ class BacktestReport:
     n_signals: int
     equity_curve: list[float]
     label_counts: dict[str, int]
-
-
-def _max_drawdown(equity_curve: np.ndarray) -> float:
-    if len(equity_curve) == 0:
-        return 0.0
-    running_max = np.maximum.accumulate(equity_curve)
-    drawdown = equity_curve - running_max
-    return float(drawdown.min())
 
 
 def _batched_lstm_proba(lstm_bundle: ModelBundle, features: np.ndarray) -> np.ndarray:
@@ -125,19 +117,24 @@ def run_backtest(
         )
         label_ints[i] = LABEL_TO_INT[result.label]
 
+    # Sequentially compounded, single-capital-pool returns — not the
+    # additive sum of every signal's independent return, which would
+    # overstate what one capital pool could realize once trade windows
+    # overlap (routine here, since a triple-barrier trade can stay open
+    # for horizon_bars while a new signal fires every bar). This is the
+    # number actually shown to the user, so it must be the honest one.
     valid_idx = np.flatnonzero(label_end_idx >= 0)
-    returns = strategy_returns(close, valid_idx, label_end_idx[valid_idx], label_ints[valid_idx], LABEL_TO_INT, cost_bps)
-    report = financial_report(returns)
+    trade_returns = sequential_trade_returns(close, valid_idx, label_end_idx[valid_idx], label_ints[valid_idx], LABEL_TO_INT, cost_bps)
+    report = compounded_report(trade_returns)
 
-    equity_curve = np.cumsum(returns[returns != 0])
     label_counts = {name: int((label_ints[valid_idx] == idx).sum()) for name, idx in LABEL_TO_INT.items()}
 
     return BacktestReport(
         hit_rate=report.win_rate,
-        net_pnl=report.net_pnl,
+        net_pnl=report.total_return,
         sharpe=report.sharpe,
-        max_drawdown=_max_drawdown(equity_curve),
+        max_drawdown=report.max_drawdown,
         n_signals=report.n_trades,
-        equity_curve=equity_curve.tolist(),
+        equity_curve=report.equity_curve,
         label_counts=label_counts,
     )
