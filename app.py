@@ -41,50 +41,28 @@ MARKETS = {
     "Commodity": {"source_kind": "yfinance", "example": "GC=F"},
     "BIST": {"source_kind": "tvdatafeed", "example": "THYAO"},
 }
-TIMEFRAMES = ["5m", "15m", "1H", "4H", "1D", "1W", "1M"]
-
-# Short(5m-1H), Medium(1D-1W), Long(1M+) — see docs/02's labeling table.
-TIMEFRAME_TO_HORIZON_BUCKET = {
-    "5m": "short",
-    "15m": "short",
-    "1H": "short",
-    "4H": "short",
-    "1D": "medium",
-    "1W": "medium",
-    "1M": "long",
+# Investment-horizon framing (per user request, replacing the previous
+# candle-granularity-driven short/medium/long split): the dealer-relevant
+# question is "how much history informs this decision and how long is
+# the implied holding period", not "which candle size". Each bucket
+# fixes the candle granularity and lookback window together — an
+# intraday candle size doesn't make sense paired with a 10-year lookback
+# (millions of bars), and a monthly candle doesn't make sense for a
+# 1-year lookback (~12 bars, not enough for indicator warm-up).
+HORIZON_OPTIONS = {
+    "short": "Short-term (1D candles, up to 1 year)",
+    "medium": "Medium-term (1D candles, up to 5 years)",
+    "long": "Long-term (1W candles, up to 10 years)",
 }
-# Default forward horizon (bars) for the triple-barrier rule per
-# timeframe — approximate; a production deployment would store the
+HORIZON_TO_TIMEFRAME = {"short": "1D", "medium": "1D", "long": "1W"}
+HORIZON_TO_LOOKBACK_DAYS = {"short": 365, "medium": 1825, "long": 3650}
+# Forward horizon (bars) for the triple-barrier rule, scaled with the
+# holding period a horizon bucket implies: short ~ a couple of weeks of
+# daily bars, medium ~ a month and a half, long ~ a quarter of weekly
+# bars. Approximate by design — a production deployment would store the
 # exact horizon_bars each champion was actually trained with (e.g. in
-# meta.json) rather than re-guess it here.
-# How many days of history to fetch per timeframe. Two constraints
-# drive this, not just "more is better":
-# - yfinance caps how far back intraday bars are available at all
-#   (~60d for 5m/15m, ~730d for 60m) — asking for more just gets
-#   silently clipped.
-# - Every indicator needs warm-up bars before it produces a value (MACD's
-#   slow EMA + signal line alone needs ~35); 1M bars are so sparse that
-#   the previous flat lookback_days=365 (~12 monthly bars) left nothing
-#   after warm-up, raising "Not enough history" for every 1M ticker.
-TIMEFRAME_TO_LOOKBACK_DAYS = {
-    "5m": 59,
-    "15m": 59,
-    "1H": 729,
-    "4H": 729,
-    "1D": 730,
-    "1W": 1825,
-    "1M": 3650,
-}
-
-TIMEFRAME_TO_HORIZON_BARS = {
-    "5m": 12,
-    "15m": 8,
-    "1H": 6,
-    "4H": 6,
-    "1D": 10,
-    "1W": 8,
-    "1M": 6,
-}
+# meta.json) rather than re-derive it here.
+HORIZON_TO_HORIZON_BARS = {"short": 10, "medium": 30, "long": 13}
 
 MODELS_DIR = Path(__file__).parent / "ml_pipeline" / "models"
 
@@ -131,15 +109,15 @@ def main() -> None:
         with st.form("ticker_form"):
             symbol_input = st.text_input("Ticker", value=MARKETS[market]["example"])
             submitted = st.form_submit_button("Load", type="primary")
-        timeframe = st.selectbox("Timeframe", TIMEFRAMES, index=TIMEFRAMES.index("1D"))
+        horizon_bucket = st.selectbox("Investment Horizon", list(HORIZON_OPTIONS.keys()), index=1, format_func=lambda k: HORIZON_OPTIONS[k])
 
     if "symbol" not in st.session_state or submitted:
         st.session_state.symbol = symbol_input.strip().upper()
     symbol = st.session_state.symbol
 
-    horizon_bucket = TIMEFRAME_TO_HORIZON_BUCKET[timeframe]
-    horizon_bars = TIMEFRAME_TO_HORIZON_BARS[timeframe]
-    lookback_days = TIMEFRAME_TO_LOOKBACK_DAYS[timeframe]
+    timeframe = HORIZON_TO_TIMEFRAME[horizon_bucket]
+    horizon_bars = HORIZON_TO_HORIZON_BARS[horizon_bucket]
+    lookback_days = HORIZON_TO_LOOKBACK_DAYS[horizon_bucket]
 
     tab_indicators, tab_ai = st.tabs(["Indicators", "AI Engine"])
     with tab_indicators:
