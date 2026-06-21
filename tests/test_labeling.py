@@ -1,7 +1,6 @@
 import numpy as np
 import pandas as pd
 
-from data_pipeline.feature_engine import atr
 from data_pipeline.labeling import attach_labels, label_features, triple_barrier_labels
 
 

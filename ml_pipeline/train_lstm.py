@@ -25,6 +25,7 @@ the 4GB-VRAM dev box):
   model — the same scaler must be applied at inference (train/serve
   skew here is a classic silent bug, per docs/03).
 """
+
 from __future__ import annotations
 
 import os
@@ -65,7 +66,7 @@ from ml_pipeline.financial_metrics import (
     strategy_returns,
 )
 from ml_pipeline.lstm_model import AttentionLSTM
-from ml_pipeline.sequence_dataset import SequenceWindowDataset, valid_sample_positions
+from ml_pipeline.sequence_dataset import SequenceWindowDataset
 from ml_pipeline.validation import Fold, out_of_time_holdout_split, purged_walk_forward_splits
 from utils.logging_config import get_logger
 
@@ -364,9 +365,7 @@ def run_training(
                     if len(preds) == 0:
                         score = float("-inf")
                     elif objective_metric == "financial":
-                        returns = strategy_returns(
-                            close, fold.test_idx, label_end_idx[fold.test_idx], preds, LABEL_TO_INT, cost_bps
-                        )
+                        returns = strategy_returns(close, fold.test_idx, label_end_idx[fold.test_idx], preds, LABEL_TO_INT, cost_bps)
                         score = financial_report(returns).net_pnl
                     else:
                         score = classification_report_dict(y_full[fold.test_idx], preds)["f1_macro"]
@@ -401,9 +400,7 @@ def run_training(
             best, X_full, y_full, calibration_fold, seq_len, seed, device, final_max_epochs, final_patience
         )
 
-        _cal_pred, cal_proba_raw = predict_positions(
-            champion, scaler, X_full, calibration_idx, seq_len, y_full, best["batch_size"], device
-        )
+        _cal_pred, cal_proba_raw = predict_positions(champion, scaler, X_full, calibration_idx, seq_len, y_full, best["batch_size"], device)
         calibration_result = fit_calibrators(cal_proba_raw, y_full[calibration_idx], method=calibration_method)
         y_proba = apply_calibration(calibration_result, y_proba_raw)
 
@@ -433,9 +430,7 @@ def run_training(
             }
         )
 
-        beats_baselines = (
-            champion_fin.net_pnl > baseline_majority.net_pnl and champion_fin.net_pnl > baseline_bh.net_pnl
-        )
+        beats_baselines = champion_fin.net_pnl > baseline_majority.net_pnl and champion_fin.net_pnl > baseline_bh.net_pnl
         mlflow.log_param("beats_baselines_net_of_cost", beats_baselines)
         mlflow.log_param("calibration_method", calibration_method)
 
@@ -480,9 +475,7 @@ def run_training(
         # cuda but the example tensor is built on cpu — pickle just saves
         # the module directly, no device-bound tracing involved.
         input_example = np.zeros((1, seq_len, X_full.shape[1]), dtype=np.float32)
-        model_info = mlflow.pytorch.log_model(
-            champion, name="model", input_example=input_example, serialization_format="pickle"
-        )
+        model_info = mlflow.pytorch.log_model(champion, name="model", input_example=input_example, serialization_format="pickle")
 
         registered_name = f"{experiment_name}_{symbol}_{timeframe}"
         mv = mlflow.register_model(model_info.model_uri, registered_name)

@@ -8,6 +8,7 @@ over here is small for a single asset/timeframe, but the access pattern
 is what matters for the 4GB-VRAM dev box once batch sizes/seq lengths
 grow for heavier runs.
 """
+
 from __future__ import annotations
 
 import numpy as np

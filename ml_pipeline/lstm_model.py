@@ -5,6 +5,7 @@ historical time steps before classification, plus dropout for
 regularization. Returns attention weights alongside logits so a run can
 log an interpretability artifact analogous to the LightGBM SHAP plot.
 """
+
 from __future__ import annotations
 
 import torch

@@ -36,4 +36,23 @@ tvdatafeed = { git = "https://github.com/rongardF/tvdatafeed.git" }
 [dependency-groups]
 dev = [
     "pytest>=9.1.1",
+    "ruff>=0.15.18",
 ]
+
+[tool.ruff]
+line-length = 140
+target-version = "py312"
+exclude = ["docs"]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort (import sorting)
+    "UP",  # pyupgrade (modern Python idioms)
+    "B",   # bugbear (common bug patterns)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["B011"]

@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -14,15 +14,21 @@ def _synthetic_ohlcv(n: int = 150, seed: int = 0) -> pd.DataFrame:
     low = close - rng.uniform(0, 1, n)
     open_ = close + rng.normal(0, 0.5, n)
     volume = rng.uniform(1e5, 1e6, n)
-    idx = pd.date_range(end=datetime.now(timezone.utc) - timedelta(days=1), periods=n, freq="1D", tz="UTC")
+    idx = pd.date_range(end=datetime.now(UTC) - timedelta(days=1), periods=n, freq="1D", tz="UTC")
     return pd.DataFrame({"open": open_, "high": high, "low": low, "close": close, "volume": volume}, index=idx)
 
 
 def test_run_backtest_indicators_only_returns_report():
     df = _synthetic_ohlcv(n=120)
     report = run_backtest(
-        df, feature_columns=FEATURE_COLUMNS, horizon_bars=10, horizon_bucket="medium",
-        w_ind=1.0, w_lgbm=0.0, w_lstm=0.0, confidence_threshold=0.4,
+        df,
+        feature_columns=FEATURE_COLUMNS,
+        horizon_bars=10,
+        horizon_bucket="medium",
+        w_ind=1.0,
+        w_lgbm=0.0,
+        w_lstm=0.0,
+        confidence_threshold=0.4,
     )
     assert isinstance(report.net_pnl, float)
     assert isinstance(report.n_signals, int)
@@ -33,8 +39,14 @@ def test_run_backtest_indicators_only_returns_report():
 def test_run_backtest_high_threshold_yields_mostly_hold():
     df = _synthetic_ohlcv(n=120)
     report = run_backtest(
-        df, feature_columns=FEATURE_COLUMNS, horizon_bars=10, horizon_bucket="medium",
-        w_ind=1.0, w_lgbm=0.0, w_lstm=0.0, confidence_threshold=0.999,
+        df,
+        feature_columns=FEATURE_COLUMNS,
+        horizon_bars=10,
+        horizon_bucket="medium",
+        w_ind=1.0,
+        w_lgbm=0.0,
+        w_lstm=0.0,
+        confidence_threshold=0.999,
     )
     assert report.label_counts["Hold"] >= report.label_counts["Buy"]
     assert report.label_counts["Hold"] >= report.label_counts["Sell"]
@@ -62,8 +74,15 @@ def test_run_backtest_with_lightgbm_bundle(tmp_path):
     bundle = load_model_bundle(model_type="lightgbm", local_dir=tmp_path)
 
     report = run_backtest(
-        df, feature_columns=FEATURE_COLUMNS, horizon_bars=10, horizon_bucket="medium",
-        w_ind=1.0, w_lgbm=1.0, w_lstm=0.0, confidence_threshold=0.4, lgbm_bundle=bundle,
+        df,
+        feature_columns=FEATURE_COLUMNS,
+        horizon_bars=10,
+        horizon_bucket="medium",
+        w_ind=1.0,
+        w_lgbm=1.0,
+        w_lstm=0.0,
+        confidence_threshold=0.4,
+        lgbm_bundle=bundle,
     )
     assert isinstance(report.net_pnl, float)
 

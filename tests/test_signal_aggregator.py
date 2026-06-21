@@ -2,9 +2,9 @@ import numpy as np
 import pytest
 
 from inference.signal_aggregator import (
-    SELL,
-    HOLD,
     BUY,
+    HOLD,
+    SELL,
     bollinger_vote,
     combine_indicator_votes,
     compute_levels,
@@ -63,9 +63,16 @@ def test_combine_indicator_votes_normalizes_weights():
 def test_fuse_signals_label_follows_argmax_above_threshold():
     p_ind = np.array([0.1, 0.1, 0.8])
     result = fuse_signals(
-        P_indicators=p_ind, P_lgbm=None, P_lstm=None,
-        w_ind=1.0, w_lgbm=0.0, w_lstm=0.0,
-        confidence_threshold=0.4, timeframe="1D", close=100.0, atr=2.0,
+        P_indicators=p_ind,
+        P_lgbm=None,
+        P_lstm=None,
+        w_ind=1.0,
+        w_lgbm=0.0,
+        w_lstm=0.0,
+        confidence_threshold=0.4,
+        timeframe="1D",
+        close=100.0,
+        atr=2.0,
     )
     assert result.label == "Buy"
     assert np.isclose(result.confidence, 0.8)
@@ -74,9 +81,16 @@ def test_fuse_signals_label_follows_argmax_above_threshold():
 def test_fuse_signals_falls_back_to_hold_below_threshold():
     p_ind = np.array([0.2, 0.4, 0.4])
     result = fuse_signals(
-        P_indicators=p_ind, P_lgbm=None, P_lstm=None,
-        w_ind=1.0, w_lgbm=0.0, w_lstm=0.0,
-        confidence_threshold=0.6, timeframe="1D", close=100.0, atr=2.0,
+        P_indicators=p_ind,
+        P_lgbm=None,
+        P_lstm=None,
+        w_ind=1.0,
+        w_lgbm=0.0,
+        w_lstm=0.0,
+        confidence_threshold=0.6,
+        timeframe="1D",
+        close=100.0,
+        atr=2.0,
     )
     assert result.label == "Hold"
 
@@ -86,9 +100,16 @@ def test_fuse_signals_excludes_none_sources_from_weighting():
     p_lgbm = np.array([1.0, 0.0, 0.0])
     # lgbm weight is 0 -> must NOT affect the fused result despite strong Sell signal
     result = fuse_signals(
-        P_indicators=p_ind, P_lgbm=p_lgbm, P_lstm=None,
-        w_ind=1.0, w_lgbm=0.0, w_lstm=0.0,
-        confidence_threshold=0.5, timeframe="1D", close=100.0, atr=2.0,
+        P_indicators=p_ind,
+        P_lgbm=p_lgbm,
+        P_lstm=None,
+        w_ind=1.0,
+        w_lgbm=0.0,
+        w_lstm=0.0,
+        confidence_threshold=0.5,
+        timeframe="1D",
+        close=100.0,
+        atr=2.0,
     )
     assert result.label == "Buy"
 
@@ -96,9 +117,16 @@ def test_fuse_signals_excludes_none_sources_from_weighting():
 def test_fuse_signals_requires_at_least_one_active_source():
     with pytest.raises(ValueError):
         fuse_signals(
-            P_indicators=None, P_lgbm=None, P_lstm=None,
-            w_ind=0.0, w_lgbm=0.0, w_lstm=0.0,
-            confidence_threshold=0.5, timeframe="1D", close=100.0, atr=2.0,
+            P_indicators=None,
+            P_lgbm=None,
+            P_lstm=None,
+            w_ind=0.0,
+            w_lgbm=0.0,
+            w_lstm=0.0,
+            confidence_threshold=0.5,
+            timeframe="1D",
+            close=100.0,
+            atr=2.0,
         )
 
 

@@ -3,6 +3,7 @@
 One canonical confusion-matrix/calibration/equity-curve implementation
 so both models' MLflow artifacts are visually comparable apples-to-apples.
 """
+
 from __future__ import annotations
 
 import matplotlib

@@ -3,6 +3,7 @@ it only calls inference.analysis_engine / backtest.walk_forward, which
 in turn only load artifacts ml_pipeline/export_onnx.py already produced
 (docs/03's train/serve boundary).
 """
+
 from __future__ import annotations
 
 from pathlib import Path
@@ -13,7 +14,6 @@ import streamlit as st
 
 from backtest.walk_forward import run_backtest
 from core.db_setup import init_db
-from data_pipeline.feature_engine import compute_features, drop_warmup
 from inference.analysis_engine import analyze, drop_unclosed_candle, fetch_ohlcv_cached
 from inference.model_loader import try_load_model_bundle
 from ml_pipeline.common import FEATURE_COLUMNS
@@ -41,15 +41,26 @@ TIMEFRAMES = ["5m", "15m", "1H", "4H", "1D", "1W", "1M"]
 
 # Short(5m-1H), Medium(1D-1W), Long(1M+) — see docs/02's labeling table.
 TIMEFRAME_TO_HORIZON_BUCKET = {
-    "5m": "short", "15m": "short", "1H": "short", "4H": "short",
-    "1D": "medium", "1W": "medium", "1M": "long",
+    "5m": "short",
+    "15m": "short",
+    "1H": "short",
+    "4H": "short",
+    "1D": "medium",
+    "1W": "medium",
+    "1M": "long",
 }
 # Default forward horizon (bars) for the triple-barrier rule per
 # timeframe — approximate; a production deployment would store the
 # exact horizon_bars each champion was actually trained with (e.g. in
 # meta.json) rather than re-guess it here.
 TIMEFRAME_TO_HORIZON_BARS = {
-    "5m": 12, "15m": 8, "1H": 6, "4H": 6, "1D": 10, "1W": 8, "1M": 6,
+    "5m": 12,
+    "15m": 8,
+    "1H": 6,
+    "4H": 6,
+    "1D": 10,
+    "1W": 8,
+    "1M": 6,
 }
 
 MODELS_DIR = Path(__file__).parent / "ml_pipeline" / "models"
@@ -77,9 +88,7 @@ def _load_bundles(symbol: str, timeframe: str):
 
 
 def _candlestick_chart(df: pd.DataFrame, levels: dict) -> go.Figure:
-    fig = go.Figure(
-        data=[go.Candlestick(x=df.index, open=df["open"], high=df["high"], low=df["low"], close=df["close"], name="Price")]
-    )
+    fig = go.Figure(data=[go.Candlestick(x=df.index, open=df["open"], high=df["high"], low=df["low"], close=df["close"], name="Price")])
     if levels.get("target") is not None:
         fig.add_hline(y=levels["target"], line_dash="dot", line_color="green", annotation_text="Target")
     if levels.get("stop") is not None:
@@ -149,12 +158,17 @@ def main() -> None:
                 return
 
             result = analyze(
-                symbol=symbol, market=market, timeframe=timeframe,
+                symbol=symbol,
+                market=market,
+                timeframe=timeframe,
                 indicator_weights=indicator_weights,
-                w_ind=w_ind, w_lgbm=w_lgbm, w_lstm=w_lstm,
+                w_ind=w_ind,
+                w_lgbm=w_lgbm,
+                w_lstm=w_lstm,
                 confidence_threshold=confidence_threshold,
                 horizon_bucket=horizon_bucket,
-                lgbm_bundle=lgbm_bundle, lstm_bundle=lstm_bundle,
+                lgbm_bundle=lgbm_bundle,
+                lstm_bundle=lstm_bundle,
                 ohlcv_df=df,
             )
     except ValueError as exc:
@@ -190,9 +204,17 @@ def main() -> None:
     if st.button("Run backtest"):
         with st.spinner("Running walk-forward backtest..."):
             report = run_backtest(
-                df, feature_columns=FEATURE_COLUMNS, horizon_bars=horizon_bars, horizon_bucket=horizon_bucket,
-                indicator_weights=indicator_weights, w_ind=w_ind, w_lgbm=w_lgbm, w_lstm=w_lstm,
-                confidence_threshold=confidence_threshold, lgbm_bundle=lgbm_bundle, lstm_bundle=lstm_bundle,
+                df,
+                feature_columns=FEATURE_COLUMNS,
+                horizon_bars=horizon_bars,
+                horizon_bucket=horizon_bucket,
+                indicator_weights=indicator_weights,
+                w_ind=w_ind,
+                w_lgbm=w_lgbm,
+                w_lstm=w_lstm,
+                confidence_threshold=confidence_threshold,
+                lgbm_bundle=lgbm_bundle,
+                lstm_bundle=lstm_bundle,
             )
         bcol1, bcol2, bcol3, bcol4 = st.columns(4)
         bcol1.metric("Hit rate", f"{report.hit_rate:.0%}" if report.hit_rate == report.hit_rate else "n/a")

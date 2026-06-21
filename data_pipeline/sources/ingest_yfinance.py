@@ -4,6 +4,7 @@ docs/02: always use split/dividend-adjusted prices (auto_adjust=True) for
 features. Source timestamps are America/New_York for US equities; we
 convert to UTC immediately so nothing downstream has to think about tz.
 """
+
 from __future__ import annotations
 
 from datetime import datetime

@@ -5,11 +5,12 @@ docs/02_data_architecture_and_features.md ("Data hygiene"). Mixing
 America/New_York (NASDAQ) and Europe/Istanbul (BIST) session times
 without normalizing to UTC corrupts intraday alignment.
 """
+
 from __future__ import annotations
 
 import logging
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from config.settings import settings
 
@@ -27,7 +28,7 @@ def get_logger(name: str) -> logging.Logger:
 
 
 def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(UTC)
 
 
 def to_utc(dt: datetime) -> datetime:
@@ -37,5 +38,5 @@ def to_utc(dt: datetime) -> datetime:
     exchange-local timestamps to their own tz *before* calling this).
     """
     if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)

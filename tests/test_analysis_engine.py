@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -14,7 +14,7 @@ def _synthetic_ohlcv(n: int = 100, freq: str = "1D", seed: int = 0) -> pd.DataFr
     low = close - rng.uniform(0, 1, n)
     open_ = close + rng.normal(0, 0.5, n)
     volume = rng.uniform(1e5, 1e6, n)
-    idx = pd.date_range(end=datetime.now(timezone.utc) - timedelta(days=1), periods=n, freq=freq, tz="UTC")
+    idx = pd.date_range(end=datetime.now(UTC) - timedelta(days=1), periods=n, freq=freq, tz="UTC")
     return pd.DataFrame({"open": open_, "high": high, "low": low, "close": close, "volume": volume}, index=idx)
 
 
@@ -65,12 +65,13 @@ def test_analyze_raises_on_no_closed_candle_data():
 
 
 def test_analyze_with_lightgbm_bundle_included(tmp_path):
-    from ml_pipeline.calibrate import fit_calibrators
-    from ml_pipeline.export_onnx import export_lightgbm_to_onnx
-    from ml_pipeline.common import FEATURE_COLUMNS
-    from inference.model_loader import load_model_bundle
     import joblib
     import lightgbm as lgb
+
+    from inference.model_loader import load_model_bundle
+    from ml_pipeline.calibrate import fit_calibrators
+    from ml_pipeline.common import FEATURE_COLUMNS
+    from ml_pipeline.export_onnx import export_lightgbm_to_onnx
 
     rng = np.random.default_rng(0)
     n_features = len(FEATURE_COLUMNS)
@@ -85,8 +86,13 @@ def test_analyze_with_lightgbm_bundle_included(tmp_path):
 
     df = _synthetic_ohlcv(n=80)
     result = analyze(
-        symbol="SYN", market="NASDAQ", timeframe="1D",
-        ohlcv_df=df, lgbm_bundle=bundle, w_lgbm=1.0, w_ind=1.0,
+        symbol="SYN",
+        market="NASDAQ",
+        timeframe="1D",
+        ohlcv_df=df,
+        lgbm_bundle=bundle,
+        w_lgbm=1.0,
+        w_ind=1.0,
     )
     assert result.per_source_probs["lightgbm"] is not None
     assert len(result.per_source_probs["lightgbm"]) == 3

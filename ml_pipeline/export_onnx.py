@@ -16,6 +16,7 @@ weights — running it through quantize_dynamic is harmless but won't do
 much. Both paths still go through the same function for one code path,
 the LightGBM case just won't see a size/latency win.
 """
+
 from __future__ import annotations
 
 import shutil
@@ -48,9 +49,7 @@ def export_lightgbm_to_onnx(model, n_features: int, output_path: Path) -> Path:
     # sequence-of-maps (one dict per row), not a dense float tensor —
     # onnxruntime's InferenceSession output is awkward to consume that
     # way, and the inference engine wants a plain [batch, n_classes] array.
-    onnx_model = convert_lightgbm(
-        model, initial_types=[("input", FloatTensorType([None, n_features]))], zipmap=False
-    )
+    onnx_model = convert_lightgbm(model, initial_types=[("input", FloatTensorType([None, n_features]))], zipmap=False)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     onnx.save_model(onnx_model, str(output_path))
     return output_path
@@ -172,9 +171,7 @@ def export_champion(
 
     meta_path = output_dir / "meta.json"
     meta_path.write_text(
-        json.dumps(
-            {"model_type": model_type, "registered_name": registered_name, "n_features": n_features, "seq_len": seq_len}
-        )
+        json.dumps({"model_type": model_type, "registered_name": registered_name, "n_features": n_features, "seq_len": seq_len})
     )
     extra_paths.append(meta_path)
 

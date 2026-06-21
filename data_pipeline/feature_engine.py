@@ -15,9 +15,9 @@ from rolling windows) are left as NaN — callers must drop them, never
 impute, per the "Indicator warm-up" rule in docs/02 (imputing injects
 look-ahead).
 """
+
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 
 

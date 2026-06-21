@@ -12,6 +12,7 @@ Always evaluate alongside the two required baselines (docs/03):
 majority-class ("always Hold") and buy-and-hold. A champion must beat
 both, net of costs, or it doesn't ship.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

@@ -34,9 +34,7 @@ def mlflow_tmp_tracking(tmp_path):
 def test_build_splits_excludes_positions_without_full_sequence_history():
     n = 200
     label_end_idx = np.minimum(np.arange(n) + 5, n - 1)
-    holdout_fold, folds = tl._build_splits(
-        n, label_end_idx, seq_len=20, n_splits=3, embargo_bars=5, holdout_frac=0.2
-    )
+    holdout_fold, folds = tl._build_splits(n, label_end_idx, seq_len=20, n_splits=3, embargo_bars=5, holdout_frac=0.2)
     all_idx = np.concatenate([holdout_fold.train_idx, holdout_fold.test_idx] + [f.train_idx for f in folds] + [f.test_idx for f in folds])
     assert (all_idx >= 19).all()  # seq_len - 1
 

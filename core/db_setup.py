@@ -8,6 +8,7 @@ Design constraints (docs/02_data_architecture_and_features.md):
   startup from an HF Dataset repo or treated as a pure read-cache over the
   live API path. See docs/04_deployment_and_environment.md.
 """
+
 from __future__ import annotations
 
 import sqlite3

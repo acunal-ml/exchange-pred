@@ -9,6 +9,7 @@ pulls it down once via huggingface_hub and caches it locally — this is
 the "Space only loads and runs this artifact, it never trains" boundary
 from docs/03.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -43,9 +44,7 @@ def ensure_local_artifacts(local_dir: Path, hf_dataset_repo: str | None = None, 
 
     repo = hf_dataset_repo or settings.hf_dataset_repo
     if not repo:
-        raise FileNotFoundError(
-            f"No model.onnx in {local_dir} and no HF_DATASET_REPO configured to fetch it from."
-        )
+        raise FileNotFoundError(f"No model.onnx in {local_dir} and no HF_DATASET_REPO configured to fetch it from.")
 
     from huggingface_hub import snapshot_download
 

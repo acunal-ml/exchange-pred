@@ -16,6 +16,7 @@ around a specific model's Estimator interface) so the exact same code
 calibrates both the LightGBM and the LSTM champion — neither has to be
 coerced into the other's API.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -58,8 +59,7 @@ def fit_calibrators(raw_proba: np.ndarray, y_true: np.ndarray, method: Calibrati
     """
     if method == "isotonic" and len(y_true) < MIN_ISOTONIC_SAMPLES:
         logger.warning(
-            "Only %d calibration samples (<%d) — isotonic regression overfits at this size; "
-            "falling back to sigmoid/Platt scaling.",
+            "Only %d calibration samples (<%d) — isotonic regression overfits at this size; falling back to sigmoid/Platt scaling.",
             len(y_true),
             MIN_ISOTONIC_SAMPLES,
         )

@@ -19,6 +19,7 @@ Model inference here is batched (one ONNX call over the whole history),
 not a per-bar Python loop calling the model — only the indicator votes
 and the fusion step are per-bar, and those are pure arithmetic.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -87,9 +88,7 @@ def run_backtest(
         return BacktestReport(0.0, 0.0, float("nan"), 0.0, 0, [], {})
 
     defaults = HORIZON_DEFAULTS[horizon_bucket]
-    barriers = triple_barrier_labels(
-        feats, horizon_bars=horizon_bars, k_upper=defaults["k_upper"], k_lower=defaults["k_lower"]
-    )
+    barriers = triple_barrier_labels(feats, horizon_bars=horizon_bars, k_upper=defaults["k_upper"], k_lower=defaults["k_lower"])
     label_end_idx = barriers["label_end_idx"].to_numpy()
     close = feats["close"].to_numpy()
     n = len(feats)
@@ -131,9 +130,7 @@ def run_backtest(
     report = financial_report(returns)
 
     equity_curve = np.cumsum(returns[returns != 0])
-    label_counts = {
-        name: int((label_ints[valid_idx] == idx).sum()) for name, idx in LABEL_TO_INT.items()
-    }
+    label_counts = {name: int((label_ints[valid_idx] == idx).sum()) for name, idx in LABEL_TO_INT.items()}
 
     return BacktestReport(
         hit_rate=report.win_rate,

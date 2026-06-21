@@ -42,7 +42,7 @@ def test_embargo_shrinks_train_near_boundary():
     folds_no_embargo = list(purged_walk_forward_splits(n, label_end_idx, n_splits=3, embargo_bars=0))
     folds_embargo = list(purged_walk_forward_splits(n, label_end_idx, n_splits=3, embargo_bars=5))
 
-    for f0, f1 in zip(folds_no_embargo, folds_embargo):
+    for f0, f1 in zip(folds_no_embargo, folds_embargo, strict=True):
         assert len(f1.train_idx) <= len(f0.train_idx)
         if len(f1.train_idx) > 0:
             assert f1.train_idx.max() <= f0.train_idx.max()

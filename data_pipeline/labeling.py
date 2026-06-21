@@ -19,6 +19,7 @@ sample whose own window overlaps it, plus an embargo gap after — that
 purge/embargo step lives in ml_pipeline/validation.py and consumes the
 `label_end_idx` this module returns.
 """
+
 from __future__ import annotations
 
 import numpy as np
@@ -28,9 +29,9 @@ import pandas as pd
 # hard rules — docs/02 says fixed percentages are retained only as
 # sanity bounds; tune k per asset/horizon via the ML pipeline.
 HORIZON_DEFAULTS = {
-    "short": {"k_upper": 1.0, "k_lower": 1.5},   # 5m-1H
+    "short": {"k_upper": 1.0, "k_lower": 1.5},  # 5m-1H
     "medium": {"k_upper": 2.0, "k_lower": 2.0},  # 1D-1W
-    "long": {"k_upper": 3.0, "k_lower": 3.0},    # 1M+
+    "long": {"k_upper": 3.0, "k_lower": 3.0},  # 1M+
 }
 
 # Canonical string<->int encoding shared by training (LightGBM needs
@@ -157,6 +158,6 @@ def attach_labels(
     which shifts positions). Training/validation code that needs
     positional exit-price lookups must use `label_features` instead.
     """
-    return label_features(
-        df, horizon_bars=horizon_bars, horizon_bucket=horizon_bucket, k_upper=k_upper, k_lower=k_lower, **kwargs
-    ).dropna(subset=["label"])
+    return label_features(df, horizon_bars=horizon_bars, horizon_bucket=horizon_bucket, k_upper=k_upper, k_lower=k_lower, **kwargs).dropna(
+        subset=["label"]
+    )

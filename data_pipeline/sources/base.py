@@ -9,6 +9,7 @@ All sources return UTC-indexed OHLCV rows shaped for
 core.db_setup.upsert_ohlcv_rows: asset_id, timeframe, timestamp (unix
 epoch seconds UTC), open, high, low, close, volume, adjusted.
 """
+
 from __future__ import annotations
 
 from abc import ABC, abstractmethod

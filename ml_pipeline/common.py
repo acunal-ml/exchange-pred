@@ -5,11 +5,12 @@ build, feature set, seeding, and metric-reporting code — one canonical
 path per docs/01's DRY principle, applied here to the training side so
 the two models stay comparable (same features, same labels, same CV).
 """
+
 from __future__ import annotations
 
 import hashlib
 import random
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import numpy as np
 import pandas as pd
@@ -69,7 +70,7 @@ def build_labeled_dataset(
     unlabelable rows must stay in the frame rather than be dropped — see
     label_features' docstring in data_pipeline.labeling.
     """
-    end = datetime.now(timezone.utc)
+    end = datetime.now(UTC)
     start = end - timedelta(days=lookback_days)
 
     data_source = YFinanceSource() if source == "yfinance" else TVDatafeedSource()
@@ -104,9 +105,7 @@ def log_metrics_safe(metrics: dict[str, float]) -> None:
 
 
 def classification_report_dict(y_true: np.ndarray, y_pred: np.ndarray) -> dict[str, float]:
-    precision, recall, f1, _ = precision_recall_fscore_support(
-        y_true, y_pred, labels=[0, 1, 2], average=None, zero_division=0
-    )
+    precision, recall, f1, _ = precision_recall_fscore_support(y_true, y_pred, labels=[0, 1, 2], average=None, zero_division=0)
     report = {
         "f1_macro": f1_score(y_true, y_pred, labels=[0, 1, 2], average="macro", zero_division=0),
     }

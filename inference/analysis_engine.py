@@ -12,9 +12,10 @@ This module never trains and never touches mlflow — it only consumes
 artifacts ml_pipeline/export_onnx.py already produced, via
 inference/model_loader.py. That boundary is deliberate (docs/03).
 """
+
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import numpy as np
 import pandas as pd

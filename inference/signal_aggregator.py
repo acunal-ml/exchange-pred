@@ -18,6 +18,7 @@ Any source whose weight is 0 or whose probabilities are None (model
 unavailable) drops out of the fusion entirely rather than contributing
 zeros that would silently drag P_final down.
 """
+
 from __future__ import annotations
 
 from dataclasses import dataclass

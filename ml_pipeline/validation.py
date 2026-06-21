@@ -17,6 +17,7 @@ Two leakage vectors are handled here:
 Folds are walk-forward: fold k's test range is strictly after fold k-1's,
 so chronological order is always respected.
 """
+
 from __future__ import annotations
 
 from collections.abc import Iterator
@@ -61,7 +62,7 @@ def purged_walk_forward_splits(
 
     fold_boundaries = np.array_split(valid_idx, n_splits)
 
-    for k, test_idx in enumerate(fold_boundaries):
+    for _k, test_idx in enumerate(fold_boundaries):
         if len(test_idx) == 0:
             continue
 

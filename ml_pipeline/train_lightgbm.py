@@ -28,6 +28,7 @@ ONNX export is intentionally not done here — it's the dedicated job of
 the planned ml_pipeline/export_onnx.py, which exports whatever run holds
 the "champion" alias.
 """
+
 from __future__ import annotations
 
 import os
@@ -130,9 +131,7 @@ def _objective(trial: optuna.Trial, ctx: TuningContext, objective_metric: str) -
             preds, _ = _train_one_fold(params, ctx.X, ctx.y, fold.train_idx, fold.test_idx, ctx.seed)
 
             if objective_metric == "financial":
-                returns = strategy_returns(
-                    ctx.close, fold.test_idx, ctx.label_end_idx[fold.test_idx], preds, LABEL_TO_INT, ctx.cost_bps
-                )
+                returns = strategy_returns(ctx.close, fold.test_idx, ctx.label_end_idx[fold.test_idx], preds, LABEL_TO_INT, ctx.cost_bps)
                 score = financial_report(returns).net_pnl
             else:
                 score = classification_report_dict(ctx.y[fold.test_idx], preds)["f1_macro"]
@@ -212,9 +211,7 @@ def run_training(
     holdout_fold = out_of_time_holdout_split(n_total, label_end_idx, holdout_frac, embargo_bars)
     n_tuning = int(holdout_fold.test_idx.min())
 
-    folds = list(
-        purged_walk_forward_splits(n_tuning, label_end_idx[:n_tuning], n_splits=n_splits, embargo_bars=embargo_bars)
-    )
+    folds = list(purged_walk_forward_splits(n_tuning, label_end_idx[:n_tuning], n_splits=n_splits, embargo_bars=embargo_bars))
     if not folds:
         raise ValueError("No valid CV folds — increase lookback_days or reduce n_splits/embargo_bars")
 
@@ -253,9 +250,7 @@ def run_training(
         # fit < early-stop-val < calibration < holdout.
         champion_train_idx, calibration_idx = carve_early_stopping_val(holdout_fold.train_idx, val_frac=calibration_frac)
         fit_idx, es_idx = carve_early_stopping_val(champion_train_idx)
-        champion = lgb.LGBMClassifier(
-            objective="multiclass", num_class=NUM_CLASS, random_state=seed, verbosity=-1, **best_params
-        )
+        champion = lgb.LGBMClassifier(objective="multiclass", num_class=NUM_CLASS, random_state=seed, verbosity=-1, **best_params)
         champion.fit(
             X.iloc[fit_idx],
             y[fit_idx],
@@ -263,9 +258,7 @@ def run_training(
             callbacks=[lgb.early_stopping(stopping_rounds=30, verbose=False)],
         )
 
-        calibration_result = fit_calibrators(
-            champion.predict_proba(X.iloc[calibration_idx]), y[calibration_idx], method=calibration_method
-        )
+        calibration_result = fit_calibrators(champion.predict_proba(X.iloc[calibration_idx]), y[calibration_idx], method=calibration_method)
 
         holdout_idx = holdout_fold.test_idx
         y_pred = champion.predict(X.iloc[holdout_idx])
@@ -297,9 +290,7 @@ def run_training(
             }
         )
 
-        beats_baselines = (
-            champion_fin.net_pnl > baseline_majority.net_pnl and champion_fin.net_pnl > baseline_bh.net_pnl
-        )
+        beats_baselines = champion_fin.net_pnl > baseline_majority.net_pnl and champion_fin.net_pnl > baseline_bh.net_pnl
         mlflow.log_param("beats_baselines_net_of_cost", beats_baselines)
         mlflow.log_param("calibration_method", calibration_method)
 
