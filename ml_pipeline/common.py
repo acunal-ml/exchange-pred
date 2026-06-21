@@ -23,14 +23,21 @@ from data_pipeline.sources.ingest_yfinance import YFinanceSource
 
 FEATURE_COLUMNS = [
     "rsi_14",
-    "macd",
-    "macd_signal",
-    "macd_hist",
-    "bb_mid",
-    "bb_upper",
-    "bb_lower",
+    "macd_norm",
+    "macd_signal_norm",
+    "macd_hist_norm",
     "bb_percent_b",
-    "atr_14",
+    "bb_upper_ratio",
+    "bb_lower_ratio",
+    "atr_pct",
+    "ret_5",
+    "ret_10",
+    "ret_20",
+    "close_sma20_ratio",
+    "close_sma50_ratio",
+    "volume_zscore_20",
+    "vol_regime",
+    "price_channel_pos",
 ]
 
 NUM_CLASS = 3  # Sell, Hold, Buy — see data_pipeline.labeling.LABEL_TO_INT
