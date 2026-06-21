@@ -31,7 +31,16 @@ from data_pipeline.feature_engine import compute_features, drop_warmup
 from data_pipeline.labeling import HORIZON_DEFAULTS, LABEL_TO_INT, triple_barrier_labels
 from inference.model_loader import ModelBundle, predict_proba
 from inference.signal_aggregator import combine_indicator_votes, fuse_signals
-from ml_pipeline.financial_metrics import DEFAULT_COST_BPS, compounded_report, sequential_trade_returns
+from ml_pipeline.financial_metrics import DEFAULT_COST_BPS, compounded_report, sequential_trades
+
+
+@dataclass
+class TradeRecord:
+    entry_date: pd.Timestamp
+    exit_date: pd.Timestamp
+    direction: str  # "Buy" | "Sell"
+    return_pct: float
+    win: bool
 
 
 @dataclass
@@ -43,6 +52,7 @@ class BacktestReport:
     n_signals: int
     equity_curve: list[float]
     label_counts: dict[str, int]
+    trades: list[TradeRecord]
 
 
 def _batched_lstm_proba(lstm_bundle: ModelBundle, features: np.ndarray) -> np.ndarray:
@@ -77,7 +87,7 @@ def run_backtest(
 ) -> BacktestReport:
     feats = drop_warmup(compute_features(df))
     if feats.empty:
-        return BacktestReport(0.0, 0.0, float("nan"), 0.0, 0, [], {})
+        return BacktestReport(0.0, 0.0, float("nan"), 0.0, 0, [], {}, [])
 
     defaults = HORIZON_DEFAULTS[horizon_bucket]
     barriers = triple_barrier_labels(feats, horizon_bars=horizon_bars, k_upper=defaults["k_upper"], k_lower=defaults["k_lower"])
@@ -117,17 +127,28 @@ def run_backtest(
         )
         label_ints[i] = LABEL_TO_INT[result.label]
 
-    # Sequentially compounded, single-capital-pool returns — not the
+    # Sequentially compounded, single-capital-pool trades — not the
     # additive sum of every signal's independent return, which would
     # overstate what one capital pool could realize once trade windows
     # overlap (routine here, since a triple-barrier trade can stay open
     # for horizon_bars while a new signal fires every bar). This is the
     # number actually shown to the user, so it must be the honest one.
     valid_idx = np.flatnonzero(label_end_idx >= 0)
-    trade_returns = sequential_trade_returns(close, valid_idx, label_end_idx[valid_idx], label_ints[valid_idx], LABEL_TO_INT, cost_bps)
-    report = compounded_report(trade_returns)
+    trades = sequential_trades(close, valid_idx, label_end_idx[valid_idx], label_ints[valid_idx], LABEL_TO_INT, cost_bps)
+    report = compounded_report(np.array([t.ret for t in trades]))
 
     label_counts = {name: int((label_ints[valid_idx] == idx).sum()) for name, idx in LABEL_TO_INT.items()}
+
+    trade_records = [
+        TradeRecord(
+            entry_date=feats.index[t.entry_idx],
+            exit_date=feats.index[t.exit_idx],
+            direction=t.direction,
+            return_pct=t.ret,
+            win=t.ret > 0,
+        )
+        for t in trades
+    ]
 
     return BacktestReport(
         hit_rate=report.win_rate,
@@ -137,4 +158,5 @@ def run_backtest(
         n_signals=report.n_trades,
         equity_curve=report.equity_curve,
         label_counts=label_counts,
+        trades=trade_records,
     )

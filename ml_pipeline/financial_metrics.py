@@ -99,14 +99,22 @@ class CompoundedReport:
     equity_curve: list[float]  # cumulative compounded return path, one point per trade
 
 
-def sequential_trade_returns(
+@dataclass(frozen=True)
+class Trade:
+    entry_idx: int
+    exit_idx: int
+    direction: str  # "Buy" | "Sell" (Hold never produces a Trade record)
+    ret: float
+
+
+def sequential_trades(
     close: np.ndarray,
     entry_idx: np.ndarray,
     exit_idx: np.ndarray,
     label_ints: np.ndarray,
     label_to_int: dict[str, int],
     cost_bps: float = DEFAULT_COST_BPS,
-) -> np.ndarray:
+) -> list[Trade]:
     """Like strategy_returns, but enforces a single capital pool: at most
     one open position at a time. A signal that fires while a previous
     trade's barrier hasn't resolved yet is skipped entirely — capital is
@@ -114,14 +122,21 @@ def sequential_trade_returns(
     resulting returns compoundable (cumulative-product) into a real
     equity curve, unlike strategy_returns' independent per-signal sums.
 
+    Returns structured `Trade` records (which position opened/closed it,
+    direction, realized return) rather than bare floats — needed
+    wherever the UI shows *which* trades these were (e.g. a recent-
+    trades table), not just aggregate stats. Use `sequential_trade_returns`
+    below if all you need is the bare return array.
+
     `entry_idx`/`exit_idx`/`label_ints` are parallel arrays (same
     convention as strategy_returns — `entry_idx` need not be sorted,
     this function sorts internally to walk chronologically).
     """
+    int_to_label = {v: k for k, v in label_to_int.items()}
     direction_map = {label_to_int["Buy"]: 1.0, label_to_int["Sell"]: -1.0}
     order = np.argsort(entry_idx)
 
-    trade_returns = []
+    trades = []
     next_available = -1
     for k in order:
         pos = entry_idx[k]
@@ -132,9 +147,24 @@ def sequential_trade_returns(
             continue
         exit_pos = exit_idx[k]
         ret = direction * (close[exit_pos] / close[pos] - 1.0) - cost_bps / 10_000.0
-        trade_returns.append(ret)
+        trades.append(Trade(entry_idx=int(pos), exit_idx=int(exit_pos), direction=int_to_label[label_ints[k]], ret=float(ret)))
         next_available = exit_pos + 1
-    return np.array(trade_returns)
+    return trades
+
+
+def sequential_trade_returns(
+    close: np.ndarray,
+    entry_idx: np.ndarray,
+    exit_idx: np.ndarray,
+    label_ints: np.ndarray,
+    label_to_int: dict[str, int],
+    cost_bps: float = DEFAULT_COST_BPS,
+) -> np.ndarray:
+    """Thin wrapper over sequential_trades() for callers (e.g. the
+    champion-gating check) that only need the bare return values, not
+    which trades produced them."""
+    trades = sequential_trades(close, entry_idx, exit_idx, label_ints, label_to_int, cost_bps)
+    return np.array([t.ret for t in trades])
 
 
 def compounded_equity_curve(trade_returns: np.ndarray) -> np.ndarray:

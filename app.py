@@ -258,6 +258,21 @@ def main() -> None:
         bcol4.metric("Signal count", report.n_signals)
         if report.equity_curve:
             st.line_chart(pd.Series(report.equity_curve, name="Cumulative return"))
+
+            st.caption(f"Most recent trades for {symbol} under this exact configuration (newest first):")
+            trades_df = pd.DataFrame(
+                [
+                    {
+                        "Entry date": t.entry_date.strftime("%Y-%m-%d"),
+                        "Exit date": t.exit_date.strftime("%Y-%m-%d"),
+                        "Direction": t.direction,
+                        "Return": f"{t.return_pct:+.2%}",
+                        "Result": "Win" if t.win else "Loss",
+                    }
+                    for t in reversed(report.trades)
+                ]
+            )
+            st.dataframe(trades_df, use_container_width=True, hide_index=True)
         else:
             st.info("No trades were triggered by this configuration over the available history.")
 

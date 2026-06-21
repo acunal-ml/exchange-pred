@@ -92,3 +92,26 @@ def test_run_backtest_empty_features_returns_empty_report():
     report = run_backtest(df, feature_columns=FEATURE_COLUMNS, horizon_bars=10)
     assert report.n_signals == 0
     assert report.equity_curve == []
+    assert report.trades == []
+
+
+def test_run_backtest_trades_have_real_dates_and_match_signal_count():
+    df = _synthetic_ohlcv(n=150)
+    report = run_backtest(
+        df,
+        feature_columns=FEATURE_COLUMNS,
+        horizon_bars=10,
+        horizon_bucket="medium",
+        w_ind=1.0,
+        w_lgbm=0.0,
+        w_lstm=0.0,
+        confidence_threshold=0.4,
+    )
+    assert len(report.trades) == report.n_signals
+    for trade in report.trades:
+        assert trade.direction in ("Buy", "Sell")
+        assert trade.exit_date >= trade.entry_date
+        assert trade.win == (trade.return_pct > 0)
+    # trades must be in chronological order (entry dates non-decreasing)
+    entry_dates = [t.entry_date for t in report.trades]
+    assert entry_dates == sorted(entry_dates)
