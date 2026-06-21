@@ -57,6 +57,25 @@ TIMEFRAME_TO_HORIZON_BUCKET = {
 # timeframe — approximate; a production deployment would store the
 # exact horizon_bars each champion was actually trained with (e.g. in
 # meta.json) rather than re-guess it here.
+# How many days of history to fetch per timeframe. Two constraints
+# drive this, not just "more is better":
+# - yfinance caps how far back intraday bars are available at all
+#   (~60d for 5m/15m, ~730d for 60m) — asking for more just gets
+#   silently clipped.
+# - Every indicator needs warm-up bars before it produces a value (MACD's
+#   slow EMA + signal line alone needs ~35); 1M bars are so sparse that
+#   the previous flat lookback_days=365 (~12 monthly bars) left nothing
+#   after warm-up, raising "Not enough history" for every 1M ticker.
+TIMEFRAME_TO_LOOKBACK_DAYS = {
+    "5m": 59,
+    "15m": 59,
+    "1H": 729,
+    "4H": 729,
+    "1D": 730,
+    "1W": 1825,
+    "1M": 3650,
+}
+
 TIMEFRAME_TO_HORIZON_BARS = {
     "5m": 12,
     "15m": 8,
@@ -120,6 +139,7 @@ def main() -> None:
 
     horizon_bucket = TIMEFRAME_TO_HORIZON_BUCKET[timeframe]
     horizon_bars = TIMEFRAME_TO_HORIZON_BARS[timeframe]
+    lookback_days = TIMEFRAME_TO_LOOKBACK_DAYS[timeframe]
 
     tab_indicators, tab_ai = st.tabs(["Indicators", "AI Engine"])
     with tab_indicators:
@@ -153,7 +173,7 @@ def main() -> None:
 
     try:
         with st.spinner("Fetching data and computing signal..."):
-            df = fetch_ohlcv_cached(symbol, market, timeframe, lookback_days=365)
+            df = fetch_ohlcv_cached(symbol, market, timeframe, lookback_days=lookback_days)
             df = drop_unclosed_candle(df, timeframe)
             if df.empty:
                 st.error(f"No data available for {symbol} ({timeframe}).")
