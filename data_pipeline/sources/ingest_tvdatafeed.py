@@ -16,7 +16,7 @@ import pandas as pd
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
 from config.settings import settings
-from data_pipeline.sources.base import DataSource, DataSourceError
+from data_pipeline.sources.base import DataSource, DataSourceError, session_aligned_resample
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -26,10 +26,15 @@ _TIMEFRAME_TO_TV_INTERVAL = {
     "15m": "15",
     "1H": "1H",
     "4H": "4H",
+    "6H": "1H",  # no native TradingView interval; resampled below
+    "12H": "1H",  # no native TradingView interval; resampled below
     "1D": "1D",
     "1W": "1W",
     "1M": "1M",
 }
+
+# Pandas resample rule for timeframes tvDatafeed has no native interval for.
+_RESAMPLE_RULE = {"6H": "6h", "12H": "12h"}
 
 
 class TVDatafeedSource(DataSource):
@@ -76,6 +81,8 @@ class TVDatafeedSource(DataSource):
             "15m": TVInterval.in_15_minute,
             "1H": TVInterval.in_1_hour,
             "4H": TVInterval.in_4_hour,
+            "6H": TVInterval.in_1_hour,
+            "12H": TVInterval.in_1_hour,
             "1D": TVInterval.in_daily,
             "1W": TVInterval.in_weekly,
             "1M": TVInterval.in_monthly,
@@ -94,6 +101,9 @@ class TVDatafeedSource(DataSource):
         if df.index.tz is None:
             df.index = df.index.tz_localize("Europe/Istanbul")
         df.index = df.index.tz_convert("UTC")
+
+        if timeframe in _RESAMPLE_RULE:
+            df = session_aligned_resample(df, _RESAMPLE_RULE[timeframe])
 
         start_utc = pd.Timestamp(start).tz_localize("UTC") if start.tzinfo is None else pd.Timestamp(start).tz_convert("UTC")
         end_utc = pd.Timestamp(end).tz_localize("UTC") if end.tzinfo is None else pd.Timestamp(end).tz_convert("UTC")

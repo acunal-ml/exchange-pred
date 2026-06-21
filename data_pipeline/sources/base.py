@@ -40,6 +40,29 @@ class DataSource(ABC):
         raise NotImplementedError
 
 
+def session_aligned_resample(df: pd.DataFrame, rule: str) -> pd.DataFrame:
+    """Resample intraday OHLCV bars to a coarser rule, anchored to the
+    session's actual opening time-of-day rather than midnight UTC.
+
+    A fixed midnight-UTC origin (pandas resample's default) can split a
+    single trading session across two buckets if the session straddles
+    a bucket boundary — e.g. BIST's ~06:00-15:00 UTC session straddles
+    the default 12:00 UTC half-day boundary, silently degrading "12H"
+    bars to the same bar count as "6H" (found via real-data testing,
+    not assumed). The session's opening time-of-day is derived from the
+    data itself (the minimum minutes-since-midnight seen) rather than
+    hardcoded per exchange, so this works for any source/exchange
+    without per-market special-casing.
+    """
+    time_of_day_minutes = df.index.hour * 60 + df.index.minute
+    origin = df.index[0].normalize() + pd.Timedelta(minutes=int(time_of_day_minutes.min()))
+    return (
+        df.resample(rule, origin=origin)
+        .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
+        .dropna(subset=["open", "high", "low", "close"])
+    )
+
+
 def to_ohlcv_rows(df: pd.DataFrame, asset_id: str, timeframe: str, adjusted: bool = True) -> list[dict]:
     """Convert a UTC-indexed OHLCV DataFrame into upsert-ready row dicts."""
     rows = []

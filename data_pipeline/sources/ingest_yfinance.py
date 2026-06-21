@@ -13,23 +13,25 @@ import pandas as pd
 import yfinance as yf
 from tenacity import retry, retry_if_exception_type, stop_after_attempt, wait_exponential
 
-from data_pipeline.sources.base import DataSource, DataSourceError
+from data_pipeline.sources.base import DataSource, DataSourceError, session_aligned_resample
 from utils.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# yfinance has no native "4h"; build it by resampling 1h candles.
+# yfinance has no native "4h"/"6h"/"12h"; build them by resampling 1h candles.
 _TIMEFRAME_TO_YF_INTERVAL = {
     "5m": "5m",
     "15m": "15m",
     "1H": "60m",
     "4H": "60m",  # resampled below
+    "6H": "60m",  # resampled below
+    "12H": "60m",  # resampled below
     "1D": "1d",
     "1W": "1wk",
     "1M": "1mo",
 }
 
-_RESAMPLE_RULE = {"4H": "4h"}
+_RESAMPLE_RULE = {"4H": "4h", "6H": "6h", "12H": "12h"}
 
 
 class YFinanceSource(DataSource):
@@ -74,10 +76,6 @@ class YFinanceSource(DataSource):
         df.index = df.index.tz_convert("UTC")
 
         if timeframe in _RESAMPLE_RULE:
-            df = (
-                df.resample(_RESAMPLE_RULE[timeframe])
-                .agg({"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"})
-                .dropna(subset=["open", "high", "low", "close"])
-            )
+            df = session_aligned_resample(df, _RESAMPLE_RULE[timeframe])
 
         return df

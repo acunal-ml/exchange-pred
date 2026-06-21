@@ -64,6 +64,29 @@ HORIZON_TO_LOOKBACK_DAYS = {"short": 365, "medium": 1825, "long": 3650}
 # meta.json) rather than re-derive it here.
 HORIZON_TO_HORIZON_BARS = {"short": 10, "medium": 30, "long": 13}
 
+# "Short-term" additionally exposes a candle-granularity sub-choice (per
+# user request) since "short-term trading" spans very different bar
+# sizes in practice (intraday scalping vs. swing trading on daily bars).
+# Each granularity gets its OWN lookback, not the "short-term" bucket's
+# 365-day default: 1H/6H/12H are capped by yfinance/tvDatafeed's ~2-year
+# intraday history limit, while 1W/1M need a multi-year lookback
+# regardless of the "short-term" label just to clear indicator warm-up
+# (close_sma50_ratio needs >=50 bars — 50 *weeks* is ~1 year, 50
+# *months* is ~4 years; a literal "up to 1 year" lookback for the 1M
+# choice would silently fail with "not enough history").
+SHORT_TERM_SUB_OPTIONS = {
+    "1H": "1 Hour (up to ~2 years)",
+    "6H": "6 Hours (up to ~2 years)",
+    "12H": "12 Hours (up to ~2 years)",
+    "1D": "1 Day (up to 1 year)",
+    "1W": "1 Week (up to 3 years)",
+    "1M": "1 Month (up to 10 years)",
+}
+SHORT_SUB_TO_LOOKBACK_DAYS = {"1H": 729, "6H": 729, "12H": 729, "1D": 365, "1W": 1095, "1M": 3650}
+# Same "approximate by design" reasoning as HORIZON_TO_HORIZON_BARS,
+# scaled down to a roughly multi-day-to-few-week holding period per bar size.
+SHORT_SUB_TO_HORIZON_BARS = {"1H": 24, "6H": 8, "12H": 6, "1D": 10, "1W": 4, "1M": 3}
+
 MODELS_DIR = Path(__file__).parent / "ml_pipeline" / "models"
 
 DISCLAIMER = (
@@ -134,18 +157,30 @@ def main() -> None:
         with st.form("ticker_form"):
             symbol_input = st.text_input("Ticker", value=MARKETS[market]["example"])
             submitted = st.form_submit_button("Load", type="primary")
-        horizon_bucket = st.selectbox("Investment Horizon", list(HORIZON_OPTIONS.keys()), index=1, format_func=lambda k: HORIZON_OPTIONS[k])
 
     if "symbol" not in st.session_state or submitted:
         st.session_state.symbol = symbol_input.strip().upper()
     symbol = st.session_state.symbol
 
-    timeframe = HORIZON_TO_TIMEFRAME[horizon_bucket]
-    horizon_bars = HORIZON_TO_HORIZON_BARS[horizon_bucket]
-    lookback_days = HORIZON_TO_LOOKBACK_DAYS[horizon_bucket]
-
     tab_indicators, tab_ai = st.tabs(["Indicators", "AI Engine"])
     with tab_indicators:
+        horizon_bucket = st.selectbox("Investment Horizon", list(HORIZON_OPTIONS.keys()), index=1, format_func=lambda k: HORIZON_OPTIONS[k])
+        if horizon_bucket == "short":
+            sub_tf = st.selectbox(
+                "Short-term timeframe",
+                list(SHORT_TERM_SUB_OPTIONS.keys()),
+                index=3,  # "1D" — same default as before this sub-choice existed
+                format_func=lambda k: SHORT_TERM_SUB_OPTIONS[k],
+            )
+            timeframe = sub_tf
+            lookback_days = SHORT_SUB_TO_LOOKBACK_DAYS[sub_tf]
+            horizon_bars = SHORT_SUB_TO_HORIZON_BARS[sub_tf]
+        else:
+            timeframe = HORIZON_TO_TIMEFRAME[horizon_bucket]
+            lookback_days = HORIZON_TO_LOOKBACK_DAYS[horizon_bucket]
+            horizon_bars = HORIZON_TO_HORIZON_BARS[horizon_bucket]
+
+        st.divider()
         st.caption(
             "Per-indicator weight/influence — normalized to sum to 1, blended into one 'Indicators' signal "
             "that itself becomes one of three inputs to the final fusion (see the AI Engine tab)."
