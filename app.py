@@ -14,9 +14,13 @@ import streamlit as st
 
 from backtest.walk_forward import run_backtest
 from core.db_setup import init_db
+from data_pipeline.sources.base import DataSourceError
 from inference.analysis_engine import analyze, drop_unclosed_candle, fetch_ohlcv_cached
 from inference.model_loader import try_load_model_bundle
 from ml_pipeline.common import FEATURE_COLUMNS
+from utils.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 st.set_page_config(page_title="Borsacım — AI Market Signals", layout="wide")
 
@@ -171,8 +175,19 @@ def main() -> None:
                 lstm_bundle=lstm_bundle,
                 ohlcv_df=df,
             )
-    except ValueError as exc:
-        st.error(str(exc))
+    except (ValueError, DataSourceError) as exc:
+        st.error(f"Couldn't analyze {symbol}: {exc}")
+        st.markdown("---")
+        st.warning(DISCLAIMER)
+        return
+    except Exception:
+        # Anything unanticipated (a third-party library quirk, a flaky
+        # upstream API, etc.) must still degrade to a clean message —
+        # showing a Python traceback to an end user isn't acceptable for
+        # a tool meant to be typed a ticker by anyone. The real
+        # exception is still logged server-side for debugging.
+        logger.exception("Unexpected error analyzing %s (%s, %s)", symbol, market, timeframe)
+        st.error(f"Something went wrong analyzing {symbol}. Please try again or pick a different ticker.")
         st.markdown("---")
         st.warning(DISCLAIMER)
         return

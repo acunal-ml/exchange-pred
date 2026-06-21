@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from inference.model_loader import ensure_local_artifacts, load_model_bundle, predict_proba
+from inference.model_loader import ensure_local_artifacts, load_model_bundle, predict_proba, try_load_model_bundle
 from ml_pipeline.calibrate import fit_calibrators
 from ml_pipeline.export_onnx import export_lightgbm_to_onnx, export_lstm_to_onnx
 from ml_pipeline.lstm_model import AttentionLSTM
@@ -68,3 +68,43 @@ def test_ensure_local_artifacts_raises_without_model_or_hf_repo(tmp_path, monkey
     monkeypatch.setattr("inference.model_loader.settings.hf_dataset_repo", None)
     with pytest.raises(FileNotFoundError):
         ensure_local_artifacts(tmp_path, hf_dataset_repo=None)
+
+
+def test_ensure_local_artifacts_raises_when_hf_download_has_no_matching_files(tmp_path, monkeypatch):
+    """Regression test: snapshot_download "succeeds" even when
+    allow_patterns matched nothing (e.g. no champion exists yet for an
+    untyped/untrained ticker) — it just returns a snapshot dir without
+    the requested subfolder. Before this fix, ensure_local_artifacts
+    returned that empty path anyway, and the eventual
+    onnxruntime.InferenceSession() failure raised a NoSuchFile error
+    that try_load_model_bundle() didn't catch, crashing the app for any
+    ticker without a trained model — exactly the failure a user hit
+    typing an arbitrary ticker into the UI.
+    """
+    empty_snapshot_dir = tmp_path / "empty_snapshot"
+    empty_snapshot_dir.mkdir()
+
+    monkeypatch.setattr("huggingface_hub.snapshot_download", lambda **kwargs: str(empty_snapshot_dir))
+
+    with pytest.raises(FileNotFoundError):
+        ensure_local_artifacts(
+            tmp_path / "does_not_exist_locally",
+            hf_dataset_repo="some/real-repo",
+            path_in_repo="NOTRAINED_1D/lightgbm",
+        )
+
+
+def test_try_load_model_bundle_never_raises_for_missing_model(tmp_path, monkeypatch):
+    """try_load_model_bundle's entire contract is "never crash the UI
+    for a missing/bad model" — verify it swallows even an unrelated
+    exception type (not just FileNotFoundError/ValueError), since that
+    was the actual root cause of the production crash this fixes."""
+    monkeypatch.setattr("inference.model_loader.settings.hf_dataset_repo", None)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("onnxruntime NoSuchFile or similar unexpected failure")
+
+    monkeypatch.setattr("inference.model_loader.load_model_bundle", _boom)
+
+    result = try_load_model_bundle("lightgbm", tmp_path)
+    assert result is None

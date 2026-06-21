@@ -55,7 +55,21 @@ def ensure_local_artifacts(local_dir: Path, hf_dataset_repo: str | None = None, 
         allow_patterns=[f"{path_in_repo}*"] if path_in_repo else None,
         token=settings.hf_hub_token or None,
     )
-    return Path(downloaded) / path_in_repo if path_in_repo else Path(downloaded)
+    resolved = Path(downloaded) / path_in_repo if path_in_repo else Path(downloaded)
+
+    # snapshot_download "succeeds" even when allow_patterns matched
+    # nothing (e.g. no champion exists yet for this symbol/timeframe) —
+    # it just returns an empty/non-matching snapshot dir. Without this
+    # check, callers get a path with no model.onnx in it, and the
+    # eventual onnxruntime.InferenceSession() failure raises a
+    # NoSuchFile error that try_load_model_bundle() doesn't know to
+    # catch, crashing the whole app instead of degrading to
+    # indicators-only fusion (the entire point of try_load_model_bundle).
+    if not (resolved / "model.onnx").exists():
+        raise FileNotFoundError(
+            f"HF dataset repo {repo!r} has no model.onnx under '{path_in_repo}' — no champion trained for this symbol/timeframe yet."
+        )
+    return resolved
 
 
 def load_model_bundle(
@@ -96,10 +110,19 @@ def try_load_model_bundle(model_type: str, local_dir: Path, **kwargs) -> ModelBu
     """Like load_model_bundle, but returns None instead of raising when
     no artifact is available locally or on the HF Hub — callers (the UI)
     must degrade to indicator-only fusion rather than crash when a given
-    (symbol, timeframe) has no trained champion yet."""
+    (symbol, timeframe) has no trained champion yet.
+
+    Catches broadly on purpose: this is the one place in the codebase
+    whose entire job is "never let a missing/bad model artifact crash
+    the app" — any failure here (a missing file, a corrupt ONNX graph,
+    a transient HF Hub error) means the same thing to the caller: no
+    usable model, fall back to indicators only. The exception is always
+    logged, so a real bug is still visible, it just doesn't take the UI
+    down with it.
+    """
     try:
         return load_model_bundle(model_type, local_dir, **kwargs)
-    except (FileNotFoundError, ValueError) as exc:
+    except Exception as exc:
         logger.info("No %s model bundle available at %s (%s)", model_type, local_dir, exc)
         return None
 
