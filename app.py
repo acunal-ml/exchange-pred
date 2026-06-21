@@ -98,6 +98,31 @@ def _candlestick_chart(df: pd.DataFrame, levels: dict) -> go.Figure:
     return fig
 
 
+_SOURCE_COLORS = {"indicators": "#7fb3ff", "lightgbm": "#ff6b6b", "lstm": "#51cf66", "final": "#1f2937"}
+
+
+def _per_source_probability_chart(per_source_probs: dict) -> go.Figure:
+    # Grouped (side-by-side), not stacked: these are independent
+    # probability distributions from different sources, not parts of a
+    # whole — stacking them (Streamlit's st.bar_chart default for
+    # multi-column data) visually implies a meaningless combined total.
+    classes = ["Sell", "Hold", "Buy"]
+    fig = go.Figure()
+    for name, probs in per_source_probs.items():
+        if probs is None:
+            continue
+        fig.add_trace(go.Bar(name=name, x=classes, y=probs, marker_color=_SOURCE_COLORS.get(name)))
+    fig.update_layout(
+        barmode="group",
+        height=350,
+        margin=dict(l=10, r=10, t=10, b=10),
+        yaxis_title="Probability",
+        yaxis_range=[0, 1],
+        legend_title_text="Source",
+    )
+    return fig
+
+
 def main() -> None:
     st.title("Borsacım — AI Market Signals")
 
@@ -121,15 +146,26 @@ def main() -> None:
 
     tab_indicators, tab_ai = st.tabs(["Indicators", "AI Engine"])
     with tab_indicators:
-        st.caption("Per-indicator weight/influence — normalized to sum to 1 before aggregation.")
+        st.caption(
+            "Per-indicator weight/influence — normalized to sum to 1, blended into one 'Indicators' signal "
+            "that itself becomes one of three inputs to the final fusion (see the AI Engine tab)."
+        )
         rsi_w = st.slider("RSI weight", 0.0, 1.0, 1.0)
         macd_w = st.slider("MACD weight", 0.0, 1.0, 1.0)
         bb_w = st.slider("Bollinger Bands weight", 0.0, 1.0, 1.0)
 
     with tab_ai:
-        st.caption("Confidence threshold below which the fused signal falls back to Hold.")
-        confidence_threshold = st.slider("Confidence threshold", 0.0, 1.0, 0.4)
-        w_ind = st.slider("Indicators weight", 0.0, 1.0, 1.0)
+        st.caption(
+            "Confidence threshold below which the fused signal falls back to Hold. "
+            "Random-guess baseline for 3 classes is ≈33% — set meaningfully above that."
+        )
+        confidence_threshold = st.slider("Confidence threshold", 0.0, 1.0, 0.5)
+        st.caption(
+            "These three weights combine the *blended* Indicators signal (Tab 1 — already a weighted mix "
+            "of RSI/MACD/Bollinger, not each indicator individually) with the LightGBM and LSTM model "
+            "outputs into one final probability."
+        )
+        w_ind = st.slider("Technical Indicators (blended) weight", 0.0, 1.0, 1.0)
         w_lgbm = st.slider("LightGBM weight", 0.0, 1.0, 1.0)
         w_lstm = st.slider("LSTM weight", 0.0, 1.0, 1.0)
 
@@ -201,13 +237,32 @@ def main() -> None:
 
     st.plotly_chart(_candlestick_chart(df, result.levels), use_container_width=True)
 
+    with tab_indicators:
+        st.subheader("Current readings")
+        ind = result.indicator_readings or {}
+        icol1, icol2, icol3 = st.columns(3)
+        rsi_val = ind.get("rsi")
+        if rsi_val is not None:
+            rsi_state = "Oversold" if rsi_val < 35 else "Overbought" if rsi_val > 65 else "Neutral"
+            icol1.metric("RSI (14)", f"{rsi_val:.1f}", rsi_state)
+        macd_val = ind.get("macd_hist")
+        if macd_val is not None:
+            macd_state = "Bullish" if macd_val > 0 else "Bearish" if macd_val < 0 else "Neutral"
+            icol2.metric("MACD histogram", f"{macd_val:.3f}", macd_state)
+        bb_val = ind.get("bb_percent_b")
+        if bb_val is not None:
+            bb_state = "Near lower band" if bb_val < 0.3 else "Near upper band" if bb_val > 0.7 else "Mid-range"
+            icol3.metric("Bollinger %B", f"{bb_val:.2f}", bb_state)
+
     with tab_ai:
         st.subheader("Per-source class probabilities")
-        prob_df = pd.DataFrame(
-            {k: v for k, v in result.per_source_probs.items() if v is not None},
-            index=["Sell", "Hold", "Buy"],
-        )
-        st.bar_chart(prob_df)
+        calibrated = [name for name, on in (result.calibrated_sources or {}).items() if on]
+        if calibrated:
+            st.caption(
+                f"{' and '.join(s.upper() if s == 'lstm' else s.title() for s in calibrated)} probabilities "
+                "shown are calibrated (isotonic/Platt scaling) — not the model's raw output."
+            )
+        st.plotly_chart(_per_source_probability_chart(result.per_source_probs), use_container_width=True)
 
     st.subheader("Backtest — out-of-sample track record")
     st.caption(

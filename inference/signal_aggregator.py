@@ -39,6 +39,8 @@ class SignalResult:
     per_source_probs: dict
     timeframe: str
     levels: dict
+    indicator_readings: dict | None = None  # raw {"rsi": .., "macd_hist": .., "bb_percent_b": ..} — for display, not fusion
+    calibrated_sources: dict | None = None  # {"lightgbm": True, "lstm": False} — whether predict_proba applied calibration
 
 
 def _normalize(raw: np.ndarray) -> np.ndarray:
@@ -108,6 +110,8 @@ def fuse_signals(
     close: float,
     atr: float,
     horizon_bucket: str = "medium",
+    indicator_readings: dict | None = None,
+    calibrated_sources: dict | None = None,
 ) -> SignalResult:
     sources = [(P_indicators, w_ind, "indicators"), (P_lgbm, w_lgbm, "lightgbm"), (P_lstm, w_lstm, "lstm")]
     active = [(p, w) for p, w, _ in sources if p is not None and w > 0]
@@ -131,6 +135,8 @@ def fuse_signals(
         per_source_probs=per_source_probs,
         timeframe=timeframe,
         levels=levels,
+        indicator_readings=indicator_readings,
+        calibrated_sources=calibrated_sources,
     )
 
 

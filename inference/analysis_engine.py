@@ -190,4 +190,14 @@ def analyze(
         close=float(latest["close"]),
         atr=float(latest["atr_14"]),
         horizon_bucket=horizon_bucket,
+        indicator_readings={
+            "rsi": float(latest["rsi_14"]),
+            "macd_hist": float(latest["macd_hist"]),
+            "bb_percent_b": float(latest["bb_percent_b"]),
+            "atr": float(latest["atr_14"]),
+        },
+        calibrated_sources={
+            "lightgbm": lgbm_bundle is not None and lgbm_bundle.calibrators is not None,
+            "lstm": lstm_bundle is not None and lstm_bundle.calibrators is not None,
+        },
     )

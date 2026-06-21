@@ -90,6 +90,8 @@ def test_analyze_with_indicators_only_returns_standardized_result():
     assert result.per_source_probs["lightgbm"] is None
     assert result.per_source_probs["lstm"] is None
     assert "entry" in result.levels
+    assert set(result.indicator_readings.keys()) == {"rsi", "macd_hist", "bb_percent_b", "atr"}
+    assert result.calibrated_sources == {"lightgbm": False, "lstm": False}
 
 
 def test_analyze_raises_on_no_closed_candle_data():
@@ -130,3 +132,4 @@ def test_analyze_with_lightgbm_bundle_included(tmp_path):
     )
     assert result.per_source_probs["lightgbm"] is not None
     assert len(result.per_source_probs["lightgbm"]) == 3
+    assert result.calibrated_sources == {"lightgbm": True, "lstm": False}
